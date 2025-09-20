@@ -10,6 +10,13 @@ from urllib.request import urlopen
 import boto3
 from botocore.exceptions import ClientError
 
+# --- App Configuration and Styling ---
+st.set_page_config(
+    page_title="Fal AI Image to Image",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 # Custom CSS for a dark, professional look
 st.markdown("""
 <style>
@@ -616,6 +623,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
