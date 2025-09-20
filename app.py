@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = " .ultra-photorealistic 8k, perfect colour calibration, natural lighting, cinematic dynamic range, physically accurate shadows and highlights, realistic depth of field, skin and fabric micro-textures visible, true-to-life hair rendering, sharp focus on subject, natural motion blur if present, subtle lens imperfections for realism, perfect exposure balance, zero artifacts, pixel-perfect clarity, high-definition HDR look, realistic camera grain and noise, smooth gradients, crisp edges, natural perspective, professional DSLR-quality shot, highly detailed environment and background, image feels like a real captured photograph"
+        base_prompt = " .ultra-photorealistic 8k, flawless photorealism, natural cinematic lighting with perfect exposure and HDR dynamic range, physically accurate shadows and reflections, professional DSLR depth of field, skin and hair rendered with micro-level detail (pores, fine hairs, texture), anatomically correct body proportions, exact facial identity and bone structure preserved, correct muscle tone and posture, realistic perspective with no warping, environment and background crisp and consistent, perfect colour balance and contrast, smooth gradients and zero banding, subtle lens imperfections (bokeh, chromatic aberration, natural camera grain) for realism, pixel-perfect sharpness without oversharpening, natural highlights and soft shadows, image feels like a genuine high-end professional photo or candid capture"
         
         # Swapping the order of prompts
         final_prompt = st.session_state.prompt + base_prompt
@@ -627,5 +627,6 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
