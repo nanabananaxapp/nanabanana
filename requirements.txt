@@ -1,7 +1,5 @@
 streamlit
-fal-client
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-google-api-python-client
+fal_client
+boto3
+botocore
 Pillow
