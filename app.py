@@ -12,14 +12,33 @@ from botocore.exceptions import ClientError
 import streamlit as st
 
 st.markdown("""
-    <style>
-        div._profileContainer_gzau3_53 {
-            display: none !important;
-        }
-        div._link_gzau3_10 {
-            display: none !important;
-        }
-    </style>
+    <script>
+        const hideElements = () => {
+            const profile = document.querySelector('div._profileContainer_gzau3_53');
+            const link = document.querySelector('div._link_gzau3_10');
+            
+            if (profile) {
+                profile.remove();
+            }
+
+            if (link) {
+                link.remove();
+            }
+        };
+
+        // Keep trying until elements are removed
+        const observer = new MutationObserver((mutations, obs) => {
+            hideElements();
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        // Also run once on load
+        window.addEventListener('load', hideElements);
+    </script>
 """, unsafe_allow_html=True)
 
 # --- App Configuration and Styling ---
@@ -635,4 +654,5 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
