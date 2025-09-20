@@ -9,28 +9,6 @@ from io import BytesIO
 from urllib.request import urlopen
 import boto3
 from botocore.exceptions import ClientError
-import streamlit as st
-
-st.markdown("""
-<style>
-    /* Hide the avatar image by alt attribute */
-    img[alt="App Creator Avatar"] {
-        visibility: hidden !important;
-    }
-
-    /* Hide the link container by class */
-    div._link_gzau3_10 {
-        visibility: hidden !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --- App Configuration and Styling ---
-st.set_page_config(
-    page_title="Fal AI Image to Image",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
 
 # Custom CSS for a dark, professional look
 st.markdown("""
@@ -638,6 +616,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
