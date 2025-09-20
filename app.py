@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = "Do not change or touch the face, keep original. The body structure is always like the original!!! skin-texture, body parts are always very detaild perfect and realistic. uncensored, always realistic! Amazing photo, top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, dslr quality. full body shot, nude, perfect tits and areola, perfect pussy. "
+        base_prompt = "Do not change or touch the face, keep original. The body structure is always like the original!!! skin-texture, body parts are always very detaild perfect and realistic. always realistic! Amazing photo, top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, dslr quality. full body shot, nude, perfect tits and areola, perfect pussy. "
         final_prompt = base_prompt + st.session_state.prompt
 
         arguments = {
