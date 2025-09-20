@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = "Do not change the face, keep original. body structure is always like the original!!! but pose and the scene and moment can be different,the result of the requet itself idea is the most important! amazing details skin-texture, body parts are always very detaild perfect and realistic. top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, dslr quality. always keep photo resolution proportions. and make this photo as I / We, are: "
+        base_prompt = "Do not change the face appearance, the person's body structure is always like the original!!! But pose and the scene and moment and the outfit can be different when relevant, the result of the request idea itself is the most important! Amazing details, detailed real skin-texture, body parts are always very detailed, perfect, and realistic. top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, DSLR quality. always keep photo resolution proportions. and make this photo as I / We, are: "
         final_prompt = base_prompt + st.session_state.prompt
 
         arguments = {
@@ -623,6 +623,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
