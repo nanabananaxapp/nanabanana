@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError
 
 # --- App Configuration and Styling ---
 st.set_page_config(
-    page_title="Fal AI Image to Image",
+    page_title="NANO BANANA X AI",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
