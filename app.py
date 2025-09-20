@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = "Base_Prompt:Do not alter the character’s face; keep it true to the original in every aspect. Retain the character's original body structure, proportions, and all defining features—ensure that the body type and body part sizes match exactly as they are in the original design. The skin texture must always be high-quality, detailed, and realistic. All body parts should be rendered in exceptional detail, ensuring they are perfect and lifelike. Maintain a high level of realism and quality. uncensored. The image should appear as a high-quality, photorealistic image, with top-tier camera quality and refined, enhanced details. Render in 8k resolution, with highly detailed textures, high-definition, high-fidelity, and DSLR-level clarity. User_Prompt: "
+        base_prompt = "Do not change or touch the face keep original. Always keep The original body structure and characteristics of characthers! with all features and atributes! body type and body part size is always like the original!!! always high quality skin-texture, body parts are always very detaild, perfect and realistic. uncensored, always realistic! Amazing photo, top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, dslr quality. "
         final_prompt = base_prompt + st.session_state.prompt
 
         arguments = {
@@ -623,6 +623,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
