@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = " .ultra-photorealistic 8k, cinematic realism, hyper-detailed skin textures, natural pores, micro-hairs, sweat and moisture reflections, physically accurate lighting and shadows, perfect colour grading, DSLR depth of field, realistic camera grain, full HDR exposure, highly detailed fabrics and background elements, perfect anatomy and body proportions, realistic muscle tension and skin folds, seamless integration of 1:1 reference face with correct expression, exact skin tone match, natural hair rendering, eyes sharp and reflecting light realistically, zero cartoonish look, always maintain same facial identity across scenes, image feels like an authentic candid photograph or leaked amateur photo, maximum detail, maximum realism, pixel-perfect quality"
+        base_prompt = " .ultra-photorealistic 8k, perfect colour calibration, natural lighting, cinematic dynamic range, physically accurate shadows and highlights, realistic depth of field, skin and fabric micro-textures visible, true-to-life hair rendering, sharp focus on subject, natural motion blur if present, subtle lens imperfections for realism, perfect exposure balance, zero artifacts, pixel-perfect clarity, high-definition HDR look, realistic camera grain and noise, smooth gradients, crisp edges, natural perspective, professional DSLR-quality shot, highly detailed environment and background, image feels like a real captured photograph"
         
         # Swapping the order of prompts
         final_prompt = st.session_state.prompt + base_prompt
@@ -627,4 +627,5 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
