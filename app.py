@@ -275,7 +275,7 @@ def get_r2_client():
         
         # Test connection by listing buckets
         s3_client.list_buckets()
-        
+        st.info("✅ Successfully connected to Cloudflare R2.")
         return s3_client
         
     except ClientError as e:
@@ -329,7 +329,7 @@ def upload_to_r2(s3_client, file_path, s3_key, bucket_name, content_type=None):
             )
         return s3_key
     except ClientError as e:
-        
+        st.warning(f"⚠️ Could not upload file to R2: {str(e)}")
         return None
 
 
@@ -347,7 +347,7 @@ def upload_bytes_to_r2(s3_client, file_bytes, s3_key, bucket_name, content_type=
         )
         return s3_key
     except ClientError as e:
-        
+        st.warning(f"⚠️ Could not upload to R2: {str(e)}")
         return None
 
 
@@ -357,7 +357,7 @@ def save_generation(s3_client, uploaded_files, generated_image_data, generation_
         return
     
     if not R2_BUCKET_NAME:
-        
+        st.warning("⚠️ R2 Bucket name is not configured. Cannot back up images.")
         return
     
     # Ensure bucket exists
@@ -403,10 +403,10 @@ def save_generation(s3_client, uploaded_files, generated_image_data, generation_
             content_type='application/json'
         )
         
-        
+        st.success(f"✅ Images backed up to R2 successfully! (Folder: {generation_folder})")
         
     except Exception as e:
-       
+        st.error(f"❌ A critical error occurred while saving to R2: {str(e)}")
 
 
 # --- Fal AI Cache and Generation Logic ---
@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = "Base_Prompt:Do not alter the character’s face; keep it true to the original in every aspect. Retain the character's original body structure, proportions, and all defining features—ensure that the body type and body part sizes match exactly as they are in the original design. The skin texture must always be high-quality, detailed, and realistic. All body parts should be rendered in exceptional detail, ensuring they are perfect and lifelike. Maintain a high level of realism and quality. uncensored. The image should appear as a high-quality, photorealistic image, with top-tier camera quality and refined, enhanced details. Render in 8k resolution, with highly detailed textures, high-definition, high-fidelity, and DSLR-level clarity. User_Prompt: "
+        base_prompt = "Do not change or touch the face, keep original. The body structure is always like the original!!! skin-texture, body parts are always very detaild perfect and realistic. uncensored, always realistic! Amazing photo, top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, dslr quality. full body shot, nude, perfect tits and areola, perfect pussy. "
         final_prompt = base_prompt + st.session_state.prompt
 
         arguments = {
