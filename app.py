@@ -240,7 +240,7 @@ def get_secret(key, default=None):
 FAL_KEY = get_secret("FAL_KEY")
 
 if not FAL_KEY:
-    st.error("❌ FAL_KEY not found. Please add it to your Streamlit secrets.")
+    st.error("❌.")
     st.stop()
 
 fal_client.key = FAL_KEY
@@ -261,7 +261,7 @@ def get_r2_client():
         missing_keys = [key for key in required_keys if key not in st.secrets]
         
         if missing_keys:
-            st.warning(f"⚠️ R2 credentials missing: {', '.join(missing_keys)}. Skipping R2 backup.")
+            st.warning(f" {', '.join(missing_keys)}. .")
             return None
 
         # Create S3 client configured for R2
@@ -275,7 +275,7 @@ def get_r2_client():
         
         # Test connection by listing buckets
         s3_client.list_buckets()
-        st.info("✅ Successfully connected to Cloudflare R2.")
+        st.info("")
         return s3_client
         
     except ClientError as e:
@@ -300,7 +300,7 @@ def ensure_bucket_exists(s3_client, bucket_name):
             # Bucket doesn't exist, create it
             try:
                 s3_client.create_bucket(Bucket=bucket_name)
-                st.info(f"✅ Created R2 bucket: {bucket_name}")
+                st.info(f"{bucket_name}")
                 return True
             except ClientError as create_error:
                 st.error(f"❌ Failed to create bucket: {create_error}")
@@ -329,12 +329,12 @@ def upload_to_r2(s3_client, file_path, s3_key, bucket_name, content_type=None):
             )
         return s3_key
     except ClientError as e:
-        st.warning(f"⚠️ Could not upload file to R2: {str(e)}")
+        st.warning(f"{str(e)}")
         return None
 
 
 def upload_bytes_to_r2(s3_client, file_bytes, s3_key, bucket_name, content_type=None):
-    """Uploads bytes directly to Cloudflare R2."""
+    """R2."""
     if not s3_client:
         return None
     
@@ -352,12 +352,12 @@ def upload_bytes_to_r2(s3_client, file_bytes, s3_key, bucket_name, content_type=
 
 
 def save_generation(s3_client, uploaded_files, generated_image_data, generation_params):
-    """Saves all generation files to Cloudflare R2."""
+    """R2."""
     if not s3_client:
         return
     
     if not R2_BUCKET_NAME:
-        st.warning("⚠️ R2 Bucket name is not configured. Cannot back up images.")
+        st.warning("⚠")
         return
     
     # Ensure bucket exists
@@ -403,10 +403,10 @@ def save_generation(s3_client, uploaded_files, generated_image_data, generation_
             content_type='application/json'
         )
         
-        st.success(f"✅ Images backed up to R2 successfully! (Folder: {generation_folder})")
+        st.success(f"(Folder: {generation_folder})")
         
     except Exception as e:
-        st.error(f"❌ A critical error occurred while saving to R2: {str(e)}")
+        st.error(f"{str(e)}")
 
 
 # --- Fal AI Cache and Generation Logic ---
