@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = " .ultra-photorealistic 8k, perfect acurate body-parts, flawless photorealism, natural cinematic lighting with perfect exposure and HDR dynamic range, physically accurate shadows and reflections, professional DSLR depth of field, skin and hair rendered with micro-level detail (pores, fine hairs, texture), anatomically correct body proportions, exact facial identity and bone structure preserved, correct muscle tone and posture, realistic perspective with no warping, environment and background crisp and consistent, perfect colour balance and contrast, smooth gradients and zero banding, subtle lens imperfections (bokeh, chromatic aberration, natural camera grain) for realism, pixel-perfect sharpness without oversharpening, natural highlights and soft shadows, image feels like a genuine high-end professional photo or candid capture "
+        base_prompt = " .ultra-photorealistic 8k, flawless natural photorealism, cinematic lighting with perfect exposure and HDR dynamic range, physically accurate shadows and reflections, professional DSLR depth of field, true-to-life skin texture with visible pores, fine hairs, subtle imperfections, and natural tones (not overly smooth, glossy, or plastic), anatomically correct body proportions, exact preserved facial identity and bone structure, correct muscle tone and posture, realistic perspective with no warping, background and environment sharp and consistent, perfect colour balance and contrast, smooth gradients and zero banding, subtle lens imperfections (soft bokeh, light chromatic aberration, natural camera grain), pixel-perfect sharpness without oversharpening, natural highlights and soft shadows, photo feels like a genuine high-end professional photograph or candid capture, not digital art "
         
         # Swapping the order of prompts
         final_prompt = st.session_state.prompt + base_prompt
@@ -627,6 +627,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
