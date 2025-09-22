@@ -617,7 +617,7 @@ with st.expander("⚙️ Advanced Settings"):
         "2048x2048 (2K)": (2048, 2048),
         "4096x4096 (4K)": (4096, 4096),
     }
-    selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=3)
+    selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2)
     st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
     st.session_state.strength = st.slider("Strength", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01)
@@ -627,6 +627,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
