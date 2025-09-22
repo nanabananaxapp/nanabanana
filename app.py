@@ -432,8 +432,8 @@ if 'num_images' not in st.session_state: st.session_state.num_images = 1
 if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 40
 if 'seed' not in st.session_state: st.session_state.seed = None
 if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False
-if 'width' not in st.session_state: st.session_state.width = 1024
-if 'height' not in st.session_state: st.session_state.height = 1024
+if 'width' not in st.session_state: st.session_state.width = 2048
+if 'height' not in st.session_state: st.session_state.height = 2048
 if 'is_generating_clicked' not in st.session_state: st.session_state.is_generating_clicked = False
 
 # --- Main App Logic and Functions ---
@@ -627,6 +627,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
