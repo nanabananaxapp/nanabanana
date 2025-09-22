@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = " .exact facial identity and bone structure preserved, Amazing details, pixel-perfect photo. realistic skin-texture, rendered with micro-level detail. body parts are always very detailed, perfect, and realistic. top camera quality, refine details, enhanced quality!! 8k, crisp and consistent, very detailed,high-definition, high-fidelity, high-resolution, DSLR quality."
+        base_prompt = " .exact facial identity preserved, Amazing details, realistic skin-texture, rendered with micro-level detail. all body parts are always very detailed, perfect, and realistic. excellent realistic camera quality, refined details, enhanced quality!! 8k, crisp and consistent, very detailed,high-definition, high-fidelity, high-resolution, DSLR quality."
         
         # Swapping the order of prompts
         final_prompt = st.session_state.prompt + base_prompt
@@ -627,6 +627,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
