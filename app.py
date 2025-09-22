@@ -432,8 +432,8 @@ if 'num_images' not in st.session_state: st.session_state.num_images = 1
 if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 40
 if 'seed' not in st.session_state: st.session_state.seed = None
 if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False
-if 'width' not in st.session_state: st.session_state.width = 2048
-if 'height' not in st.session_state: st.session_state.height = 2048
+if 'width' not in st.session_state: st.session_state.width = 1024
+if 'height' not in st.session_state: st.session_state.height = 1024
 if 'is_generating_clicked' not in st.session_state: st.session_state.is_generating_clicked = False
 
 # --- Main App Logic and Functions ---
@@ -455,7 +455,7 @@ def generate_images():
         
         st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        base_prompt = " .Do not change the face appearance, the person's body structure is always like the original!!! But pose and the scene and moment and can be different when relevant. change outfit only when asked to. amazing details, detailed real skin-texture, body parts are always very detailed, perfect, and realistic. top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, DSLR quality."
+        base_prompt = " .exact facial identity and bone and body structure preserved, but the pose and the scene, and the moment can be different when relevant. change outfit only when asked to. Amazing details, pixel-perfect photo, pixel-perfect original face details. Detailed, realistic skin-texture, rendered with micro-level detail. body parts are always very detailed, perfect, and realistic. top camera quality, refine details, enhanced quality!! 8k, crisp and consistent, very detailed,high-definition, high-fidelity, high-resolution, DSLR quality."
         
         # Swapping the order of prompts
         final_prompt = st.session_state.prompt + base_prompt
@@ -627,6 +627,7 @@ with st.expander("⚙️ Advanced Settings"):
     seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
     st.session_state.seed = seed_input
     st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
 
 
 
