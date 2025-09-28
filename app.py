@@ -127,8 +127,8 @@ st.markdown("""
     /* Wrapper to contain both image and button and define relative positioning scope */
     .thumbnail-wrapper {
         position: relative; 
-        display: inline-block; /* Crucial: make wrapper only as wide as contents */
-        /* Set margin-bottom to make space for the success message below */
+        width: 100px; /* IMPORTANT: Fix width to match the st.image size */
+        display: inline-block; 
         margin-bottom: 25px; 
     }
     
@@ -136,17 +136,22 @@ st.markdown("""
     .thumbnail-wrapper [data-testid="stImage"] {
         border-radius: 8px;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-        margin-bottom: 0px !important; /* Ensure no extra space below the image */
-        display: block; /* Ensure image takes up its own line within the wrapper */
-        overflow: hidden; /* Hide any overflow */
+        margin-bottom: 0px !important; 
+        display: block; 
+        overflow: hidden; 
+    }
+    
+    /* 1. CRITICAL: Hide the filename box that appears after upload */
+    /* This targets the div containing the filename that Streamlit adds */
+    .stFileUploader .uploadedFileName {
+        display: none !important;
     }
 
     /* Target the specific removal button and make it tiny, absolute positioned */
-    /* We position it 5px from the top and 5px from the right of the 100px wide image */
     .thumbnail-wrapper [data-testid*="remove_upload_img_btn_"] > button { 
         position: absolute !important; 
-        top: 0px !important;            /* 5px from the top edge of the image container */
-        right: 0px !important;          /* 5px from the right edge of the image container */
+        top: 0px !important;           
+        right: 0px !important;         
         
         /* Make it tiny */
         padding: 0px !important;
@@ -285,17 +290,20 @@ def remove_uploaded_image_data(session_state_key):
 
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
     """
-    Handles the UI for image upload, using st.image with PIL for reliable thumbnail display 
-    and CSS to overlay the '❌' button.
+    Handles the UI for image upload, displaying only a small thumbnail and 
+    a tiny '❌' button on the thumbnail, suppressing the default file name display.
     """
     input_image_url = None
+    
+    # 1. Display the label first
+    st.markdown(f"**{label_text}**")
     
     current_file_data = st.session_state.get(session_state_key)
     
     if current_file_data is None:
-        # --- 1. Show Uploader (File Not Uploaded) ---
+        # --- A. File Not Uploaded: Show Uploader ---
         uploaded_file = st.file_uploader(
-            label_text,
+            " ", # Empty label to suppress extra text below the markdown label above
             type=["png", "jpg", "jpeg"],
             key=f"uploader_{session_state_key}"
         )
@@ -305,12 +313,10 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
             # Read the file content into a BytesIO object
             file_data = BytesIO(uploaded_file.getvalue())
             st.session_state[session_state_key] = file_data
-            # Note: State change triggers rerun
+            st.experimental_rerun() # Rerun immediately to switch to thumbnail view
         
     else:
-        # --- 2. Show Thumbnail and Removal Button (File Uploaded) ---
-        
-        st.markdown(f"**{label_text}**")
+        # --- B. File Uploaded: Show Thumbnail and Removal Button ---
         
         # 1. Read bytes for FAL (base64) and Streamlit (PIL)
         current_file_data.seek(0)
@@ -319,39 +325,43 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
         # Prepare URL for FAL client (must be base64 encoded)
         input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
         
-        # Container for the image and button for reliable relative positioning via CSS
-        # This div MUST be placed before the image and button components
-        st.markdown('<div class="thumbnail-wrapper">', unsafe_allow_html=True)
+        # Use a container to place image and button for precise CSS control
+        # The key to this fix is placing the content inside this controlled environment
+        # and using the CSS class .thumbnail-wrapper
         
-        try:
-            # Create the PIL Image object for reliable display in st.image
-            img_to_display = Image.open(BytesIO(img_bytes))
+        container = st.container()
+        with container:
+            st.markdown('<div class="thumbnail-wrapper">', unsafe_allow_html=True)
             
-            # Display the image thumbnail
-            st.image(img_to_display, width=100, use_column_width=False, output_format='auto') 
+            try:
+                # Create the PIL Image object for reliable display in st.image
+                img_to_display = Image.open(BytesIO(img_bytes))
+                
+                # Display the SMALL image thumbnail (width=100)
+                st.image(img_to_display, width=100, use_column_width=False, output_format='auto') 
+                
+                # The actual Streamlit button (positioned absolutely via CSS)
+                st.button(
+                    "❌",
+                    key=f"remove_upload_img_btn_{session_state_key}", 
+                    help="Click to remove the uploaded image.",
+                    type="secondary",
+                    on_click=remove_uploaded_image_data,
+                    args=(session_state_key,),
+                )
+                
+            except Exception as e:
+                # Handle corrupted or unsupported files gracefully
+                st.warning("Uploaded file is not a valid image. Please remove it and try again.")
+                input_image_url = None 
+                st.session_state[session_state_key] = None
             
-            # The actual Streamlit button (positioned absolutely via CSS, styled as tiny '❌')
-            st.button(
-                "❌",
-                key=f"remove_upload_img_btn_{session_state_key}", 
-                help="Click to remove the uploaded image.",
-                type="secondary",
-                on_click=remove_uploaded_image_data,
-                args=(session_state_key,),
-            )
+            # Close the wrapper div
+            st.markdown('</div>', unsafe_allow_html=True)
             
-        except Exception as e:
-            # Handle corrupted or unsupported files gracefully
-            st.warning("Uploaded file is not a valid image. Please remove it and try again.")
-            input_image_url = None 
-            st.session_state[session_state_key] = None
-        
-        # Close the wrapper div
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Add a subtle confirmation message 
-        st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color);">Image ready for Image-to-Image Generation.</p>', unsafe_allow_html=True)
-        current_file_data.seek(0) # Reset BytesIO after use
+            # Add a subtle confirmation message 
+            st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: -15px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
+            current_file_data.seek(0) # Reset BytesIO after use
 
     if current_file_data is not None:
         current_file_data.seek(0)
