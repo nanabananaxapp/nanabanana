@@ -121,44 +121,46 @@ st.markdown("""
     }
     
     /* ======================================================= */
-    /* *** THUMBNAIL ON UPLOADED FILE STYLING (SIMPLIFIED) *** */
+    /* *** FORCE SMALL UPLOADED THUMBNAIL (100x100) *** */
     /* ======================================================= */
     
-    /* Wrapper for the thumbnail to enforce size and spacing */
-    .thumbnail-wrapper-simple {
-        margin-top: 10px; 
-        margin-bottom: 5px; 
-        /* Force container width to limit Streamlit's rendering space */
-        width: 100px !important; 
-        display: block;
-    }
-    
-    /* Target the Streamlit image component inside the wrapper */
-    .thumbnail-wrapper-simple [data-testid="stImage"] {
-        width: 100px !important; /* Fixed width */
-        height: 100px !important; /* Fixed height for a square grid look */
-        /* Use object-fit cover to ensure the image fills the square without stretching */
-        object-fit: cover !important; 
+    /* Wrapper for the single uploaded file thumbnail (Using pure HTML/base64) */
+    .uploaded-thumbnail-wrapper {
+        margin-top: 10px;
+        margin-bottom: 5px;
+        width: 100px !important; /* Force width */
+        height: 100px !important; /* Force height */
+        overflow: hidden;
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); 
-        overflow: hidden; 
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        display: block !important; 
     }
-    /* Also target the actual <img> tag inside stImage for maximum coercion */
-    .thumbnail-wrapper-simple [data-testid="stImage"] img {
-        width: 100% !important;
-        height: 100% !important;
-        object-fit: cover !important;
+    /* The actual <img> tag inside the wrapper */
+    .uploaded-thumbnail-wrapper img {
+        width: 100px !important; /* Force image width */
+        height: 100px !important; /* Force image height */
+        object-fit: cover !important; /* Ensure content fills the box */
+        border-radius: 8px !important; 
+        display: block !important;
+        margin: 0 !important;
     }
 
-    /* Ensure generated image results also use clean thumbnails */
+    /* ======================================================= */
+    /* *** GENERATED IMAGE GALLERY STYLING *** */
+    /* ======================================================= */
+    
+    /* Container for generated image results */
     .generated-image-result {
         margin-bottom: 20px;
     }
+    /* Generated image itself */
     .generated-image-result [data-testid="stImage"] img {
         border-radius: 8px;
         width: 100%;
         height: 100%;
         object-fit: cover;
+        /* Small gap adjustment for the 3-column generated grid */
+        margin-bottom: 5px; 
     }
 
 </style>
@@ -260,17 +262,18 @@ def upload_file_to_r2(content_url, file_extension):
 
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
     """
-    Handles the UI for image upload: shows the default uploader (with filename) 
-    and manually draws a small thumbnail below it, relying on Streamlit's native 
-    'Clear file' button for removal.
+    Handles the UI for image upload using a single-file uploader.
+    The uploaded image is displayed using aggressive CSS applied via markdown 
+    to force a small, fixed-size 100x100 thumbnail.
     """
     input_image_url = None
     
-    # 1. Always show the uploader widget
+    # 1. Always show the uploader widget (single file, for I2I)
     uploaded_file = st.file_uploader(
         label_text, 
         type=["png", "jpg", "jpeg"],
-        key=f"uploader_{session_state_key}" 
+        key=f"uploader_{session_state_key}",
+        accept_multiple_files=False # IMPORTANT: Single file for I2I 
     )
     
     # 2. Sync Session State (our persistent data storage) with Uploader State
@@ -282,38 +285,35 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
         # Uploader is empty (user clicked native Clear file), clear persistent storage
         st.session_state[session_state_key] = None
 
-    # 3. Check persistent state to draw the thumbnail
+    # 3. Check persistent state to draw the tiny, forced thumbnail
     current_file_data = st.session_state.get(session_state_key)
     
     if current_file_data is not None:
-        # Draw Thumbnail Block
-        current_file_data.seek(0)
-        img_bytes = current_file_data.getvalue()
-        
-        # Prepare URL for FAL client (must be base64 encoded)
-        input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
-        
-        # Use a simple container for the small grid display (styled via CSS)
-        # The CSS linked in the <style> block will force this image to 100x100px.
-        st.markdown('<div class="thumbnail-wrapper-simple">', unsafe_allow_html=True) 
-        
         try:
-            img_to_display = Image.open(BytesIO(img_bytes))
+            # Read, prepare base64 URL, and reset pointer
+            current_file_data.seek(0)
+            img_bytes = current_file_data.getvalue()
+            # Check if the file is a valid image before base64 encoding
+            Image.open(BytesIO(img_bytes))
             
-            # Display the SMALL image thumbnail (width=100 hint for Streamlit)
-            st.image(img_to_display, width=100, use_column_width=False, output_format='auto') 
+            input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
             
+            # Use ultra-aggressive HTML/CSS to force the 100x100 thumbnail
+            st.markdown(f"""
+                <div class="uploaded-thumbnail-wrapper">
+                    <img src="{input_image_url}" alt="Uploaded Thumbnail" />
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Subtle confirmation message below the thumbnail
+            st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
+
         except Exception:
             # Handle corrupted or unsupported files gracefully
-            st.warning("Uploaded file is corrupted or not a valid image. Please remove it using the button next to the filename.")
+            st.warning("Uploaded file is corrupted or not a valid image. Please use the 'Clear file' button above to remove it.")
             input_image_url = None 
             st.session_state[session_state_key] = None
         
-        # Close the wrapper div
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Subtle confirmation message below the thumbnail
-        st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
         current_file_data.seek(0) # Reset BytesIO after use
 
     return input_image_url
@@ -500,6 +500,7 @@ with tab_image:
 
         # --- Gallery Display ---
         if st.session_state.image_result_urls:
+            # Displays generated images in a 3-column grid
             cols = st.columns(3) 
             
             for i, url in enumerate(st.session_state.image_result_urls):
@@ -526,7 +527,7 @@ with tab_image:
                     )
                     st.markdown("</div>", unsafe_allow_html=True)
         else:
-            st.info("Your generated images will appear here as small thumbnails.")
+            st.info("Your generated images will appear here as small thumbnails (3 in a row).")
             
     # --- Advanced Settings Expander ---
     with col_input_img:
