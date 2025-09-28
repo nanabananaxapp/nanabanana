@@ -90,84 +90,71 @@ st.markdown("""
         margin-bottom: 15px;
     }
     
-    /* Buttons */
-    .stButton > button {
+    /* Primary Button Style (GENERATE) */
+    .stButton[data-testid="stButton-primary"] > button {
         background-color: var(--primary-color);
         color: #ffffff;
         border-radius: 8px;
         border: none;
-        padding: 10px 20px;
+        padding: 12px 20px;
+        font-size: 1.1rem;
         font-weight: 700;
         transition: background-color 0.3s;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
-    .stButton > button:hover {
+    .stButton[data-testid="stButton-primary"] > button:hover {
         background-color: #3457c7; /* Darker royal blue on hover */
     }
     
-    /* Tabs Styling */
-    .stTabs [data-testid="stTab"] {
-        background-color: var(--card-background);
+    /* Secondary Button Style (Download/Remove) */
+    .stButton > button {
+        background-color: #333; /* Dark gray for secondary buttons */
         color: var(--text-color);
-        border-radius: 8px 8px 0 0;
-        padding: 10px 20px;
-        margin-right: 5px;
-        font-weight: 600;
-        border-bottom: 2px solid var(--border-color);
+        border-radius: 6px;
+        border: none;
+        padding: 8px 10px;
+        font-weight: 500;
+        transition: background-color 0.3s;
     }
-    .stTabs [aria-selected="true"] {
-        border-bottom: 3px solid var(--primary-color);
-        color: var(--primary-color) !important;
-        background-color: var(--background-color);
+    .stButton > button:hover {
+        background-color: #555;
     }
-    .stTabs [data-testid="stTabContainer"] {
-        background-color: var(--card-background);
-        border-radius: 10px;
+    
+    /* Special style for the small '❌' button on the uploaded image*/
+    /* Target the button key specific to the uploaded image removal */
+    [data-testid*="remove_upload_img_btn_"] button { 
+        padding: 4px 8px !important;
+        font-size: 1.2rem !important;
+        line-height: 1 !important;
+        background-color: #B22222 !important; /* Firebrick red */
+        color: white !important;
+        border-radius: 5px !important;
+        margin-left: 10px; /* Space between image and X */
+        height: 40px; /* Aligns vertically with the top of the image */
+    }
+    [data-testid*="remove_upload_img_btn_"] button:hover {
+        background-color: #8B0000 !important; /* Darker red */
+    }
+    
+    /* Special style for the small '❌' button on the generated images in the gallery */
+    [data-testid*="remove_gallery_img_btn_"] button { 
+        padding: 4px 8px !important;
+        font-size: 1.2rem !important;
+        line-height: 1 !important;
+        background-color: #B22222 !important; /* Firebrick red */
+        color: white !important;
+        border-radius: 5px !important;
+        height: 40px; /* Vertical alignment tweak */
+    }
+    [data-testid*="remove_gallery_img_btn_"] button:hover {
+        background-color: #8B0000 !important; /* Darker red */
+    }
+    
+    /* Ensure the column content inside the thumbnail display is top-aligned */
+    [data-testid="stHorizontalBlock"] > div > div:first-child {
+        align-items: flex-start !important;
     }
 
-    /* Custom styles for image upload thumbnail and removal button */
-    .uploaded-thumbnail-container {
-        display: flex;
-        align-items: center;
-        padding: 8px 12px;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        background-color: var(--card-background);
-        margin-top: 10px;
-    }
-    .uploaded-thumbnail-image {
-        width: 48px;
-        height: 48px;
-        object-fit: cover;
-        border-radius: 4px;
-        margin-right: 15px;
-    }
-    
-    /* --- NEW STYLES FOR OUTPUT GALLERY THUMBNAILS --- */
-    .gallery-thumbnail-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        background-color: var(--card-background);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        padding: 5px;
-        margin-bottom: 5px; /* Reduced margin for compact display */
-    }
-    .gallery-thumbnail-image {
-        width: 100px; /* Fixed small size */
-        height: 100px; 
-        object-fit: cover;
-        border-radius: 6px;
-        margin-bottom: 5px;
-    }
-    
-    /* Streamlit button specific styling for the small buttons below thumbnails */
-    /* Ensure the buttons are aligned well */
-    [data-testid*="stVerticalBlock"] > [data-testid*="stHorizontalBlock"] > div > [data-testid*="stButton"] button {
-        padding: 5px 10px;
-        font-size: 0.8rem;
-        font-weight: 500;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -218,7 +205,8 @@ if 'seed' not in st.session_state: st.session_state.seed = None
 if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
 
 # --- IMAGE UPLOADS (Stores BytesIO object) ---
-if 'image_upload_img_data' not in st.session_state: st.session_state.image_upload_img_data = None
+# IMPORTANT: This will store the BytesIO object of the user's uploaded image.
+if 'image_upload_img_data' not in st.session_state: st.session_state.image_upload_img_data = None 
 if 'video_upload_img_data' not in st.session_state: st.session_state.video_upload_img_data = None
 
 # --- IMAGE DEFAULTS (SDXL) ---
@@ -285,84 +273,86 @@ def upload_file_to_r2(content_url, file_extension):
         print(f"R2 Upload Failed: {e}") 
         return content_url
 
-def image_to_base64(uploaded_file_data):
-    """Converts BytesIO file data to a base64 string for thumbnail display."""
-    if uploaded_file_data:
-        try:
-            # Re-read the BytesIO object from the start
-            uploaded_file_data.seek(0)
-            img = Image.open(uploaded_file_data)
-            img.thumbnail((128, 128)) # Resize for thumbnail
-            
-            buffered = BytesIO()
-            # Save as JPEG to standardize output (smaller size)
-            img.save(buffered, format="JPEG")
-            
-            # Reset BytesIO position after saving
-            uploaded_file_data.seek(0) 
-            
-            return base64.b64encode(buffered.getvalue()).decode()
-        except Exception:
-            # Reset BytesIO position after failure
-            uploaded_file_data.seek(0)
-            return None
-    return None
+def remove_uploaded_image_data(session_state_key):
+    """Callback function to remove the uploaded image data from session state."""
+    # This function is called by the '❌' button on click
+    if session_state_key in st.session_state:
+        st.session_state[session_state_key] = None
+        st.toast("Uploaded image removed.")
+
 
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
-    """Handles the UI for image upload, thumbnail display, and removal."""
+    """
+    Handles the UI for image upload, thumbnail display, and removal.
     
-    # 1. Image Uploader
-    uploaded_file = st.file_uploader(
-        label_text,
-        type=["png", "jpg", "jpeg"],
-        key=f"uploader_{session_state_key}"
-    )
-
-    # If a new file is uploaded, update the session state with BytesIO data
-    if uploaded_file is not None and getattr(st.session_state, session_state_key) is None:
-        file_data = BytesIO(uploaded_file.getvalue())
-        setattr(st.session_state, session_state_key, file_data)
-    
-    # 2. Thumbnail Display and Removal
-    current_file_data = getattr(st.session_state, session_state_key)
+    CRITICAL FIX: This now uses an if/else block to show EITHER the uploader 
+    OR the thumbnail+X, ensuring clarity and alignment for the uploaded image.
+    """
     input_image_url = None
     
-    if current_file_data is not None:
-        
-        b64_img = image_to_base64(current_file_data)
-        
-        if b64_img:
-            # Get base64 URL for FAL client by re-reading the data
-            current_file_data.seek(0)
-            img_bytes = current_file_data.getvalue()
-            current_file_data.seek(0) # Reset pointer
-            input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
+    current_file_data = st.session_state.get(session_state_key)
+    
+    if current_file_data is None:
+        # --- 1. Show Uploader (File Not Uploaded) ---
+        uploaded_file = st.file_uploader(
+            label_text,
+            type=["png", "jpg", "jpeg"],
+            key=f"uploader_{session_state_key}"
+        )
 
-            # Use st.markdown for a custom thumbnail display with an inline X button
-            st.markdown(f"""
-                <div class="uploaded-thumbnail-container">
-                    <img src="data:image/jpeg;base64,{b64_img}" class="uploaded-thumbnail-image" alt="Uploaded Image Thumbnail"/>
-                    <span style="color: var(--text-color); font-size: 0.9rem; margin-right: auto;">Image Ready for Generation.</span>
-                    <button class="remove-button" onclick="
-                        // This uses a non-Streamlit way to signal state change via JS, 
-                        // which relies on the environment supporting this cross-frame communication.
-                        // However, using a Streamlit button is generally more reliable. 
-                        // We keep the JS for the visual style but still rely on Streamlit Reruns for logic flow.
-                        window.parent.postMessage({{
-                            'type': 'set_session_state',
-                            'key': '{session_state_key}',
-                            'value': null
-                        }}, '*');
-                        window.parent.postMessage({{
-                            'type': 'rerun'
-                        }}, '*');
-                    "><p>X</p></button>
-                </div>
-            """, unsafe_allow_html=True)
+        # If a new file is uploaded, update the session state with BytesIO data
+        if uploaded_file is not None:
+            file_data = BytesIO(uploaded_file.getvalue())
+            st.session_state[session_state_key] = file_data
+            # Need to re-run immediately to switch to thumbnail display
+            st.experimental_rerun()
+        
+    else:
+        # --- 2. Show Thumbnail and Removal Button (File Uploaded) ---
+        
+        # Ensure BytesIO is at the start for display and generation
+        current_file_data.seek(0)
+        img_bytes = current_file_data.getvalue()
+        
+        # Prepare URL for FAL client (base64 encoded)
+        current_file_data.seek(0) # Reset pointer after getting bytes
+        input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
+        
+        st.markdown(f"**{label_text}**")
+        
+        # Use columns for perfect side-by-side alignment of small thumbnail and button
+        col_thumb, col_remove = st.columns([0.5, 1.5], gap="small")
+
+        with col_thumb:
+            # Display the small thumbnail (100px wide)
+            st.image(
+                current_file_data, 
+                caption="Uploaded", 
+                width=100, # Enforce small size
+                use_column_width=False # Prevent automatic stretching
+            )
+            # Reset BytesIO after st.image reads it
+            current_file_data.seek(0) 
+
+        with col_remove:
+            # Display the '❌' removal button, well aligned to the top.
+            st.button(
+                "❌",
+                key=f"remove_upload_img_btn_{session_state_key}", # Custom data-testid targetted by CSS
+                help="Click to remove the uploaded image.",
+                type="secondary",
+                on_click=remove_uploaded_image_data,
+                args=(session_state_key,),
+            )
             
-            # Ensure the BytesIO object is at the beginning for the generator call
-            current_file_data.seek(0)
-            
+        # Add a subtle confirmation message below the thumbnail
+        st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color);">Image ready for Image-to-Image Generation.</p>', unsafe_allow_html=True)
+
+
+    # Ensure the BytesIO object is at the beginning for the generator call
+    if current_file_data is not None:
+        current_file_data.seek(0)
+        
     return input_image_url
 
 # --- FAL Generation Functions (Restored with actual logic) ---
@@ -510,9 +500,10 @@ with tab_image:
         st.markdown("## Image Input Controls")
         
         # --- Image Upload Section (Using custom component) ---
+        # This function now handles showing the small thumbnail + X button when an image is uploaded.
         input_image_url = display_image_uploader_with_thumbnail(
             'image_upload_img_data',
-            "Upload an **initial image** for Image-to-Image Generation (Optional)"
+            "Initial image for **Image-to-Image** Generation (Optional)"
         )
         
         # --- Prompts ---
@@ -531,13 +522,14 @@ with tab_image:
         
         st.markdown("---")
         
-        # --- Generate Button ---
-        final_image_seed = None # Always Random
+        # --- Generate Button (Max Visibility) ---
+        final_image_seed = None 
         
         # Check if FAL is initialized before allowing generation
         if fal is None:
             st.warning("Please resolve the FATAL ERROR above before generating.")
         else:
+            # THIS IS YOUR GENERATE BUTTON LOCATION
             if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
                 if st.session_state.prompt:
                     st.session_state.image_result_urls = fal_generate_image(
@@ -556,129 +548,118 @@ with tab_image:
                     # Use a specific message if no prompt is entered
                     st.toast("Please enter a prompt to generate an image.") 
 
-        st.markdown("---")
+    # --- Output Gallery (Right Column) ---
+    with col_output_img:
+        st.markdown("## Generated Images Gallery")
+        
+        # --- Image Removal Logic ---
+        if st.session_state.remove_index is not None:
+            if 0 <= st.session_state.remove_index < len(st.session_state.image_result_urls):
+                st.session_state.image_result_urls.pop(st.session_state.remove_index)
+            st.session_state.remove_index = None # Reset index
+            st.experimental_rerun() # Rerun to update the gallery
 
-        # --- Advanced Settings (ALL FEATURES EXPOSED) ---
-        with st.expander("⚙️ Advanced Settings (SDXL / Seedream)", expanded=False):
-            st.markdown("Customize model parameters for creative control.")
+        # --- Gallery Display (Fixed for small thumbnails and X button) ---
+        if st.session_state.image_result_urls:
+            # Create a dynamic number of columns based on how many images can fit
+            cols = st.columns(3) 
+            
+            for i, url in enumerate(st.session_state.image_result_urls):
+                with cols[i % 3]: # Cycle through the 3 columns
+                    # Use a small nested column layout for perfect alignment of image and X
+                    # We use a very small second column to push the X up against the image
+                    col_thumb_slot, col_remove_slot = st.columns([0.5, 0.5])
+                    
+                    with col_thumb_slot:
+                        # Display the image thumbnail
+                        st.image(
+                            url, 
+                            caption=f"Image {i+1}", 
+                            width=100, # Enforce small size
+                            use_column_width=False # Ensure it stays 100px and doesn't stretch
+                        )
+                        
+                    with col_remove_slot:
+                        # Display the '❌' removal button, well aligned to the top.
+                        st.button(
+                            "❌",
+                            key=f"remove_gallery_img_btn_{i}",
+                            help="Remove this generated image from the gallery.",
+                            type="secondary",
+                            # Lambda function captures the index 'i' at loop time
+                            on_click=lambda index=i: st.session_state.__setitem__('remove_index', index)
+                        )
+                        
+                    st.download_button(
+                        label="⬇️ Download",
+                        data=requests.get(url).content,
+                        file_name=f"nano_banana_x_ai_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{i}.jpg",
+                        mime="image/jpeg",
+                        use_container_width=True
+                    )
+                    st.markdown("---")
+        else:
+            st.info("Your generated images will appear here as small thumbnails.")
+            
+    # --- Advanced Settings Expander (Moved to end of left column for better flow) ---
+    with col_input_img:
+        with st.expander("⚙️ Advanced Settings"):
+            st.markdown("Customize how the model generates your image.")
             
             resolution_options = {
                 "512x512": (512, 512),
                 "768x768": (768, 768),
                 "1024x1024": (1024, 1024),
                 "2048x2048 (2K)": (2048, 2048),
-                "4096x4096 (4K)": (4096, 4096),
+                # Note: 4K is very slow and expensive. Limiting selection.
             }
-            # Default to 1024x1024 (index 2)
-            selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2, key="img_resolution")
+            # Find the key for the current resolution or default to 1024x1024
+            current_res_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
+            
+            selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=list(resolution_options.keys()).index(current_res_key))
             st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
-            # Sliders reflect specific defaults: 0.95 and 4.5
-            st.session_state.strength = st.slider("Strength (Img2Img Only)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength")
-            st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_scale")
-            st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=4, value=st.session_state.num_images, step=1, key="img_num_images")
-            st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1, key="img_steps")
+            st.session_state.strength = st.slider("Strength (Image-to-Image only)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01)
+            st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1)
+            st.session_state.num_images = st.slider("Number of Images to Generate", min_value=1, max_value=4, value=st.session_state.num_images)
+            st.session_state.num_inference_steps = st.slider("Inference Steps (Quality/Speed)", min_value=10, max_value=100, value=st.session_state.num_inference_steps, step=5)
+            st.session_state.enable_safety_checker = st.checkbox("Enable Safety Filter", value=st.session_state.enable_safety_checker)
             
-            st.number_input("Seed (Policy: Always Random)", min_value=0, max_value=0, value=0, step=1, disabled=True, key="img_seed_input_display")
-            
-            st.session_state.enable_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.enable_safety_checker, key="img_safety_check")
-
-    with col_output_img:
-        st.markdown("## Image Output Gallery")
-        
-        # --- Image Removal Logic (Must run before display loop) ---
-        # Checks if a removal was requested in the previous run and executes it
-        if st.session_state.remove_index is not None:
-            try:
-                # Remove the item at the specified index
-                del st.session_state.image_result_urls[st.session_state.remove_index]
-                st.session_state.remove_index = None # Clear the flag
-                st.experimental_rerun()
-            except IndexError:
-                st.session_state.remove_index = None # Safety clear
-        
-        # --- Image Display Logic (Small Thumbnails) ---
-        if st.session_state.image_result_urls:
-            
-            # Use 3 columns to display small thumbnails side-by-side
-            cols = st.columns(3) 
-            
-            for i, image_url in enumerate(st.session_state.image_result_urls):
-                with cols[i % 3]: # Cycle through the 3 columns
-                    
-                    # Custom HTML for the small thumbnail container (using new CSS class)
-                    st.markdown(f"""
-                        <div class="gallery-thumbnail-container">
-                            <img src="{image_url}" class="gallery-thumbnail-image" title="Result {i+1}"/>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Streamlit button for Removal (The functional 'X' requested)
-                    # We set the remove_index state variable and trigger a rerun on click
-                    if st.button("❌ Remove", key=f"remove_img_{i}", use_container_width=True):
-                        st.session_state.remove_index = i
-                        # The rerun is handled automatically by the button click
-                        
-                    # Download button
-                    try:
-                        image_content = requests.get(image_url).content
-                    except Exception:
-                        image_content = b"Error fetching image content."
-                        
-                    st.download_button(
-                        label="⬇️ Download",
-                        data=image_content,
-                        file_name=f"nano_banana_img_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.jpg",
-                        mime="image/jpeg",
-                        use_container_width=True
-                    )
-        else:
-             st.markdown(f"""
-            <div style="
-                height: 400px; 
-                border: 2px dashed var(--primary-color); 
-                border-radius: 12px; 
-                display: flex; 
-                flex-direction: column;
-                justify-content: center; 
-                align-items: center; 
-                color: var(--text-color);
-                background-color: var(--card-background);
-                text-align: center;
-                margin-top: 15px;
-            ">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 48px; height: 48px; color: var(--secondary-color);">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.58-1.58l1.593-1.593a2.25 2.25 0 013.182 0l2.25 2.25m-4.5 4.5l2.25 2.25m-4.5-4.5l5.159-5.159m-1.58-1.58l1.593-1.593a2.25 2.25 0 013.182 0l2.25 2.25M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
-                </svg>
-                <h4 style="color: var(--secondary-color); margin-top: 10px;">IMAGE GALLERY</h4>
-                <p style="font-size: 0.9rem; color: #888;">Generated images will appear here.</p>
-            </div>
-            """, unsafe_allow_html=True)
-
 
 # --------------------------------------------------
-# 🎥 VIDEO GENERATION TAB (Second Tab, Protected)
+# 🎥 VIDEO GENERATION TAB (Second Tab)
 # --------------------------------------------------
 with tab_video:
     
-    if st.session_state.video_authenticated:
-        # --- Authenticated Content ---
-        st.markdown("---")
+    if not st.session_state.video_authenticated:
+        st.markdown("## 🔐 Video Generation Access")
+        st.warning("Video Generation is currently restricted. Please enter the password to access.")
         
-        col_input, col_output = st.columns([1, 2])
+        password_attempt = st.text_input("Enter Password", type="password", key="video_password_input")
+        if st.button("Unlock Video Generator", key="video_unlock_button"):
+            if password_attempt:
+                authenticate_video_tab(password_attempt)
+            else:
+                st.error("Please enter a password.")
+        
+    else:
+        st.success("Access Granted! Generating videos with Wan-I2V.")
+        
+        col_input_video, col_output_video = st.columns([1, 2])
 
-        with col_input:
+        with col_input_video:
             st.markdown("## Video Input Controls")
             
-            # --- Image Upload Section for Video Source (Using custom component) ---
+            # --- Image Upload Section for Video I2V ---
+            # This function now handles showing the small thumbnail + X button when an image is uploaded.
             input_video_image_url = display_image_uploader_with_thumbnail(
                 'video_upload_img_data',
-                "Upload **source image** for Image-to-Video Generation (Optional)"
+                "Initial image for **Image-to-Video** Generation (Optional)"
             )
 
             # --- Prompts ---
             st.session_state.video_prompt = st.text_area(
-                "Enter your **video prompt**", 
+                "Enter your **video prompt**",
                 value=st.session_state.video_prompt,
                 height=150,
                 key="video_prompt_area"
@@ -692,108 +673,62 @@ with tab_video:
             
             st.markdown("---")
             
-            final_video_seed = None # Always Random
-            
             # --- Generate Button ---
-            # Check if FAL is initialized before allowing generation
+            final_video_seed = None 
+            
             if fal is None:
                 st.warning("Please resolve the FATAL ERROR above before generating.")
             else:
-                if st.button("🚀 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
+                if st.button("🎬 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
                     if st.session_state.video_prompt:
                         st.session_state.video_result_url = fal_generate_video(
                             st.session_state.video_prompt, 
-                            st.session_state.negative_prompt,
-                            input_video_image_url,
-                            final_video_seed # Always None
+                            st.session_state.negative_prompt, 
+                            input_video_image_url, 
+                            final_video_seed
                         )
                     else:
-                        st.toast("Please enter a prompt to generate a video.")
-            
-            st.markdown("---")
-            
-            # --- Advanced Settings (ALL FEATURES EXPOSED) ---
-            with st.expander("⚙️ Advanced Settings (Wan-I2V / SVD)", expanded=False):
-                st.markdown("Precise control over motion and video output, matching **fal-ai/wan-i2v** defaults.")
+                        st.toast("Please enter a prompt to generate a video.") 
+
+            # --- Advanced Settings Expander ---
+            with st.expander("⚙️ Video Advanced Settings"):
+                st.markdown("Customize Wan-I2V generation.")
                 
-                # Resolution
-                video_resolution_options = {
-                    "832x480 (480P)": (832, 480), # Default
-                    "1024x576 (576P)": (1024, 576),
-                    "1280x720 (720P)": (1280, 720),
+                resolution_video_options = {
+                    "512x512": (512, 512),
+                    "832x480": (832, 480), # Recommended landscape
                 }
-                # Default to 832x480 (index 0)
-                selected_video_resolution = st.selectbox("Resolution", list(video_resolution_options.keys()), index=0, key="vid_resolution_select")
-                st.session_state.video_width, st.session_state.video_height = video_resolution_options[selected_video_resolution]
-
-                # Core Generation Parameters
-                st.session_state.video_strength = st.slider("Strength (Image Fidelity)", min_value=0.0, max_value=1.0, value=st.session_state.video_strength, step=0.01, key="vid_strength_slider")
-                st.session_state.motion_bucket_id = st.slider("Motion Bucket ID (Movement amount)", min_value=1, max_value=255, value=st.session_state.motion_bucket_id, step=1, key="vid_motion_bucket_slider")
-                st.session_state.cond_aug = st.slider("Conditioning Augmentation", min_value=0.0, max_value=0.1, value=st.session_state.cond_aug, step=0.01, format="%.2f", key="vid_cond_aug_slider")
-                st.session_state.video_lora_weight = st.slider("LoRA Weight (Style adaptation)", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01, key="vid_lora_weight_slider")
                 
-                # Time/Quality Parameters
-                st.session_state.video_num_frames = st.slider("Number of Frames (Max 100)", min_value=16, max_value=100, value=st.session_state.video_num_frames, step=1, key="vid_num_frames_slider")
-                st.session_state.video_fps = st.slider("FPS (Frames per Second)", min_value=1, max_value=24, value=st.session_state.video_fps, step=1, key="vid_fps_slider")
-                st.session_state.video_num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=1, key="vid_steps_slider")
-
-                st.number_input("Seed (Policy: Always Random)", min_value=0, max_value=0, value=0, step=1, disabled=True, key="vid_seed_input_display")
+                current_res_key = next((k for k, v in resolution_video_options.items() if v == (st.session_state.video_width, st.session_state.video_height)), "832x480")
                 
-                st.session_state.video_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.video_safety_checker, key="vid_safety_check")
+                selected_resolution_video = st.selectbox("Select Resolution", list(resolution_video_options.keys()), index=list(resolution_video_options.keys()).index(current_res_key), key="video_res_select")
+                st.session_state.video_width, st.session_state.video_height = resolution_video_options[selected_resolution_video]
 
-        with col_output:
-            st.markdown("## Video Output Preview")
+                st.session_state.video_strength = st.slider("Strength (Image-to-Video only)", min_value=0.0, max_value=1.0, value=st.session_state.video_strength, step=0.01)
+                st.session_state.video_num_frames = st.slider("Number of Frames", min_value=16, max_value=250, value=st.session_state.video_num_frames, step=1)
+                st.session_state.video_fps = st.slider("Frames Per Second (FPS)", min_value=8, max_value=30, value=st.session_state.video_fps, step=1)
+                st.session_state.motion_bucket_id = st.slider("Motion Bucket ID (Controls motion strength/style)", min_value=0, max_value=1024, value=st.session_state.motion_bucket_id, step=1)
+                st.session_state.cond_aug = st.slider("Conditioning Augmentation", min_value=0.0, max_value=0.2, value=st.session_state.cond_aug, step=0.01)
+                st.session_state.video_lora_weight = st.slider("LoRA Weight", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01)
+                st.session_state.video_num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=5)
+                st.session_state.video_safety_checker = st.checkbox("Enable Safety Filter", value=st.session_state.video_safety_checker, key="video_safety_check")
+                
+        # --- Output Video Display (Right Column) ---
+        with col_output_video:
+            st.markdown("## Generated Video")
             if st.session_state.video_result_url:
-                st.video(st.session_state.video_result_url, format="video/mp4", start_time=0, loop=True, autoplay=True, use_container_width=True)
-                st.markdown(f'<p style="text-align:center; color: var(--text-color); font-size: 0.9rem;">Generated on: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>', unsafe_allow_html=True)
+                st.video(st.session_state.video_result_url)
                 
-                # R2 Download button or link to original FAL URL
-                download_label = "Download Video (Staged)" if STAGING_ENABLED else "Download Video (FAL URL)"
-                
-                # Download the content to serve the file directly to the user
-                try:
-                    video_content = requests.get(st.session_state.video_result_url).content
-                except Exception:
-                    video_content = b"Error fetching video content."
-
+                # Download button for the generated video
                 st.download_button(
-                    label=download_label,
-                    data=video_content,
-                    file_name=f"nano_banana_video_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.mp4",
+                    label="⬇️ Download Video",
+                    data=requests.get(st.session_state.video_result_url).content,
+                    file_name=f"nano_banana_x_ai_video_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.mp4",
                     mime="video/mp4",
                     use_container_width=True
                 )
             else:
-                st.markdown(f"""
-                <div style="
-                    height: 400px; 
-                    border: 2px dashed var(--primary-color); 
-                    border-radius: 12px; 
-                    display: flex; 
-                    flex-direction: column;
-                    justify-content: center; 
-                    align-items: center; 
-                    color: var(--text-color);
-                    background-color: var(--card-background);
-                    text-align: center;
-                    margin-top: 15px;
-                ">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 48px; height: 48px; color: var(--secondary-color);">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9.75M4.5 5.25h9.75M4.5 12h9.75" />
-                    </svg>
-                    <h4 style="color: var(--secondary-color); margin-top: 10px;">VIDEO PREVIEW</h4>
-                    <p style="font-size: 0.9rem; color: #888;">Your generated video will appear here.</p>
-                </div>
-                """, unsafe_allow_html=True)
+                st.info("Your generated video will appear here.")
                 
-    else:
-        # --- Authentication Form ---
-        st.markdown("## 🔒 Video Generation is Password Protected")
-        st.warning("Please enter the password to access this feature.")
-        
-        with st.form("video_login_form"):
-            password_input = st.text_input("Enter Password", type="password", key="password_input")
-            submitted = st.form_submit_button("Unlock Tab", type="primary")
-            
-            if submitted:
-                authenticate_video_tab(password_input)
+            st.markdown("---")
+            st.warning("Video generation can be slow and may take several minutes.")
