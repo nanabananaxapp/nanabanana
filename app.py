@@ -10,7 +10,7 @@ from io import BytesIO
 import requests
 import boto3
 from botocore.exceptions import ClientError
-from PIL import Image # CRITICAL: Ensure PIL is imported for reliable image handling
+from PIL import Image 
 
 # Define Constants
 VIDEO_PASSWORD = "f6676kwp"
@@ -121,7 +121,7 @@ st.markdown("""
     }
     
     /* ======================================================= */
-    /* *** CRITICAL FIX: TINY X BUTTON ON UPLOADED THUMBNAIL *** */
+    /* *** THUMBNAIL ON UPLOADED FILE STYLING *** */
     /* ======================================================= */
     
     /* Wrapper to contain both image and button and define relative positioning scope */
@@ -129,7 +129,8 @@ st.markdown("""
         position: relative; 
         width: 100px; /* IMPORTANT: Fix width to match the st.image size */
         display: inline-block; 
-        margin-bottom: 25px; 
+        margin-top: 10px; /* Space below the filename/uploader widget */
+        margin-bottom: 5px; 
     }
     
     /* Target the Streamlit image container within the wrapper and set its properties */
@@ -141,10 +142,9 @@ st.markdown("""
         overflow: hidden; 
     }
     
-    /* 1. CRITICAL: Hide the filename box that appears after upload */
-    /* This targets the div containing the filename that Streamlit adds */
+    /* Ensure the filename display is NOT hidden, as requested */
     .stFileUploader .uploadedFileName {
-        display: none !important;
+        /* This is now intentionally NOT hidden */
     }
 
     /* Target the specific removal button and make it tiny, absolute positioned */
@@ -282,90 +282,87 @@ def upload_file_to_r2(content_url, file_extension):
         return content_url
 
 def remove_uploaded_image_data(session_state_key):
-    """Callback function to remove the uploaded image data from session state."""
+    """Callback function to remove the uploaded image data from session state AND clear the uploader widget."""
+    uploader_key = f"uploader_{session_state_key}"
+    
+    # 1. Clear the uploader widget's internal value to clear the file name
+    if uploader_key in st.session_state:
+        st.session_state[uploader_key] = None 
+        
+    # 2. Clear our stored bytes, which controls the thumbnail display
     if session_state_key in st.session_state:
         st.session_state[session_state_key] = None
-        st.toast("Uploaded image removed.")
-
+        
+    st.toast("Uploaded image removed.")
+    # This rerun is necessary to refresh the UI and hide the thumbnail block completely
+    st.experimental_rerun() 
 
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
     """
-    Handles the UI for image upload, displaying only a small thumbnail and 
-    a tiny '❌' button on the thumbnail, suppressing the default file name display.
+    Handles the UI for image upload: shows the default uploader (with filename) 
+    and manually draws a small thumbnail and a custom '❌' button below it.
     """
     input_image_url = None
     
-    # 1. Display the label first
-    st.markdown(f"**{label_text}**")
+    # 1. Always show the uploader widget using the provided label
+    uploaded_file = st.file_uploader(
+        label_text, 
+        type=["png", "jpg", "jpeg"],
+        key=f"uploader_{session_state_key}" 
+    )
     
+    # 2. If a file is present in the uploader widget, store its bytes persistently.
+    if uploaded_file is not None:
+        file_data = BytesIO(uploaded_file.getvalue())
+        st.session_state[session_state_key] = file_data
+    
+    # 3. Check session state (our persistent storage) to decide whether to draw the thumbnail.
     current_file_data = st.session_state.get(session_state_key)
     
-    if current_file_data is None:
-        # --- A. File Not Uploaded: Show Uploader ---
-        uploaded_file = st.file_uploader(
-            " ", # Empty label to suppress extra text below the markdown label above
-            type=["png", "jpg", "jpeg"],
-            key=f"uploader_{session_state_key}"
-        )
-
-        # If a new file is uploaded, update the session state with BytesIO data
-        if uploaded_file is not None:
-            # Read the file content into a BytesIO object
-            file_data = BytesIO(uploaded_file.getvalue())
-            st.session_state[session_state_key] = file_data
-            st.experimental_rerun() # Rerun immediately to switch to thumbnail view
+    if current_file_data is not None:
+        # This block runs AFTER the native st.file_uploader renders (showing the filename).
         
-    else:
-        # --- B. File Uploaded: Show Thumbnail and Removal Button ---
-        
-        # 1. Read bytes for FAL (base64) and Streamlit (PIL)
+        # Read bytes for FAL (base64) and Streamlit (PIL)
         current_file_data.seek(0)
         img_bytes = current_file_data.getvalue()
         
         # Prepare URL for FAL client (must be base64 encoded)
         input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
         
-        # Use a container to place image and button for precise CSS control
-        # The key to this fix is placing the content inside this controlled environment
-        # and using the CSS class .thumbnail-wrapper
+        # --- Draw Thumbnail Block (The thumbnail and our custom X) ---
+        # We use a container to apply our CSS for positioning.
+        st.markdown('<div class="thumbnail-wrapper">', unsafe_allow_html=True)
         
-        container = st.container()
-        with container:
-            st.markdown('<div class="thumbnail-wrapper">', unsafe_allow_html=True)
+        try:
+            # Create the PIL Image object for reliable display in st.image
+            img_to_display = Image.open(BytesIO(img_bytes))
             
-            try:
-                # Create the PIL Image object for reliable display in st.image
-                img_to_display = Image.open(BytesIO(img_bytes))
-                
-                # Display the SMALL image thumbnail (width=100)
-                st.image(img_to_display, width=100, use_column_width=False, output_format='auto') 
-                
-                # The actual Streamlit button (positioned absolutely via CSS)
-                st.button(
-                    "❌",
-                    key=f"remove_upload_img_btn_{session_state_key}", 
-                    help="Click to remove the uploaded image.",
-                    type="secondary",
-                    on_click=remove_uploaded_image_data,
-                    args=(session_state_key,),
-                )
-                
-            except Exception as e:
-                # Handle corrupted or unsupported files gracefully
-                st.warning("Uploaded file is not a valid image. Please remove it and try again.")
-                input_image_url = None 
-                st.session_state[session_state_key] = None
+            # Display the SMALL image thumbnail (width=100)
+            st.image(img_to_display, width=100, use_column_width=False, output_format='auto') 
             
-            # Close the wrapper div
-            st.markdown('</div>', unsafe_allow_html=True)
+            # The actual Streamlit button (positioned absolutely via CSS)
+            st.button(
+                "❌",
+                key=f"remove_upload_img_btn_{session_state_key}", 
+                help="Click to remove the uploaded image.",
+                type="secondary",
+                on_click=remove_uploaded_image_data,
+                args=(session_state_key,),
+            )
             
-            # Add a subtle confirmation message 
-            st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: -15px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
-            current_file_data.seek(0) # Reset BytesIO after use
+        except Exception:
+            # Handle corrupted or unsupported files gracefully
+            st.warning("Uploaded file is corrupted or not a valid image. Please remove it and try again.")
+            input_image_url = None 
+            st.session_state[session_state_key] = None
+        
+        # Close the wrapper div
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Subtle confirmation message below the thumbnail
+        st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
+        current_file_data.seek(0) # Reset BytesIO after use
 
-    if current_file_data is not None:
-        current_file_data.seek(0)
-        
     return input_image_url
 
 def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
