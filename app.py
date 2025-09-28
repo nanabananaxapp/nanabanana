@@ -121,56 +121,24 @@ st.markdown("""
     }
     
     /* ======================================================= */
-    /* *** THUMBNAIL ON UPLOADED FILE STYLING *** */
+    /* *** THUMBNAIL ON UPLOADED FILE STYLING (SIMPLIFIED) *** */
     /* ======================================================= */
     
-    /* Wrapper to contain both image and button and define relative positioning scope */
-    .thumbnail-wrapper {
-        position: relative; 
-        width: 100px; /* IMPORTANT: Fix width to match the st.image size */
-        display: inline-block; 
+    /* Wrapper for the thumbnail to enforce size and spacing */
+    .thumbnail-wrapper-simple {
         margin-top: 10px; /* Space below the filename/uploader widget */
         margin-bottom: 5px; 
+        width: 100px; /* Constrain the container width */
+        display: block;
     }
     
-    /* Target the Streamlit image container within the wrapper and set its properties */
-    .thumbnail-wrapper [data-testid="stImage"] {
+    /* Target the Streamlit image container within the wrapper for grid look */
+    .thumbnail-wrapper-simple [data-testid="stImage"] {
         border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); /* Subtle shadow for grid pop-out */
         margin-bottom: 0px !important; 
         display: block; 
         overflow: hidden; 
-    }
-    
-    /* Ensure the filename display is NOT hidden, as requested */
-    .stFileUploader .uploadedFileName {
-        /* This is now intentionally NOT hidden */
-    }
-
-    /* Target the specific removal button and make it tiny, absolute positioned */
-    .thumbnail-wrapper [data-testid*="remove_upload_img_btn_"] > button { 
-        position: absolute !important; 
-        top: 0px !important;           
-        right: 0px !important;         
-        
-        /* Make it tiny */
-        padding: 0px !important;
-        font-size: 0.7rem !important; 
-        line-height: 1 !important;
-        width: 18px !important;
-        height: 18px !important;
-        
-        background-color: #B22222 !important; /* Firebrick red */
-        color: white !important;
-        border-radius: 50% !important; /* Circular X */
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); /* Shadow for pop-out effect */
-        z-index: 100;
-        
-        /* Adjust position slightly to overlay the image border */
-        transform: translate(50%, -50%); 
-    }
-    .thumbnail-wrapper [data-testid*="remove_upload_img_btn_"] > button:hover {
-        background-color: #8B0000 !important; /* Darker red on hover */
     }
 
     /* Ensure generated image results also use clean thumbnails */
@@ -281,78 +249,53 @@ def upload_file_to_r2(content_url, file_extension):
         print(f"R2 Upload Failed: {e}") 
         return content_url
 
-def remove_uploaded_image_data(session_state_key):
-    """Callback function to remove the uploaded image data from session state AND clear the uploader widget."""
-    uploader_key = f"uploader_{session_state_key}"
-    
-    # 1. Clear the uploader widget's internal value to clear the file name
-    if uploader_key in st.session_state:
-        st.session_state[uploader_key] = None 
-        
-    # 2. Clear our stored bytes, which controls the thumbnail display
-    if session_state_key in st.session_state:
-        st.session_state[session_state_key] = None
-        
-    st.toast("Uploaded image removed.")
-    # This rerun is necessary to refresh the UI and hide the thumbnail block completely
-    st.experimental_rerun() 
-
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
     """
     Handles the UI for image upload: shows the default uploader (with filename) 
-    and manually draws a small thumbnail and a custom '❌' button below it.
+    and manually draws a small thumbnail below it, relying on Streamlit's native 
+    'Clear file' button for removal.
     """
     input_image_url = None
     
-    # 1. Always show the uploader widget using the provided label
+    # 1. Always show the uploader widget
     uploaded_file = st.file_uploader(
         label_text, 
         type=["png", "jpg", "jpeg"],
         key=f"uploader_{session_state_key}" 
     )
     
-    # 2. If a file is present in the uploader widget, store its bytes persistently.
+    # 2. Sync Session State (our persistent data storage) with Uploader State
     if uploaded_file is not None:
+        # File is present in the uploader, update persistent storage
         file_data = BytesIO(uploaded_file.getvalue())
         st.session_state[session_state_key] = file_data
-    
-    # 3. Check session state (our persistent storage) to decide whether to draw the thumbnail.
+    else:
+        # Uploader is empty (user clicked native Clear file), clear persistent storage
+        st.session_state[session_state_key] = None
+
+    # 3. Check persistent state to draw the thumbnail
     current_file_data = st.session_state.get(session_state_key)
     
     if current_file_data is not None:
-        # This block runs AFTER the native st.file_uploader renders (showing the filename).
-        
-        # Read bytes for FAL (base64) and Streamlit (PIL)
+        # Draw Thumbnail Block
         current_file_data.seek(0)
         img_bytes = current_file_data.getvalue()
         
         # Prepare URL for FAL client (must be base64 encoded)
         input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
         
-        # --- Draw Thumbnail Block (The thumbnail and our custom X) ---
-        # We use a container to apply our CSS for positioning.
-        st.markdown('<div class="thumbnail-wrapper">', unsafe_allow_html=True)
+        # Use a simple container for the small grid display (styled via CSS)
+        st.markdown('<div class="thumbnail-wrapper-simple">', unsafe_allow_html=True) 
         
         try:
-            # Create the PIL Image object for reliable display in st.image
             img_to_display = Image.open(BytesIO(img_bytes))
             
             # Display the SMALL image thumbnail (width=100)
             st.image(img_to_display, width=100, use_column_width=False, output_format='auto') 
             
-            # The actual Streamlit button (positioned absolutely via CSS)
-            st.button(
-                "❌",
-                key=f"remove_upload_img_btn_{session_state_key}", 
-                help="Click to remove the uploaded image.",
-                type="secondary",
-                on_click=remove_uploaded_image_data,
-                args=(session_state_key,),
-            )
-            
         except Exception:
             # Handle corrupted or unsupported files gracefully
-            st.warning("Uploaded file is corrupted or not a valid image. Please remove it and try again.")
+            st.warning("Uploaded file is corrupted or not a valid image. Please remove it using the button next to the filename.")
             input_image_url = None 
             st.session_state[session_state_key] = None
         
