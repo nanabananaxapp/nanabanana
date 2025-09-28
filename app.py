@@ -125,27 +125,27 @@ if 'video_authenticated' not in st.session_state: st.session_state.video_authent
 # --- IMAGE DEFAULTS (Seedream/SDXL) ---
 if 'prompt' not in st.session_state: st.session_state.prompt = "A hyper-realistic portrait of a golden retriever wearing a banana helmet, 8k cinematic lighting"
 if 'image_result_urls' not in st.session_state: st.session_state.image_result_urls = []
-if 'width' not in st.session_state: st.session_state.width = 1024 # DEFAULT 1024
-if 'height' not in st.session_state: st.session_state.height = 1024 # DEFAULT 1024
-if 'strength' not in st.session_state: st.session_state.strength = 0.7 # Fal Img2Img default
-if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 9.0 # Fal SDXL default
+if 'width' not in st.session_state: st.session_state.width = 1024
+if 'height' not in st.session_state: st.session_state.height = 1024
+if 'strength' not in st.session_state: st.session_state.strength = 0.95 # ***UPDATED DEFAULT***
+if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5 # ***UPDATED DEFAULT***
 if 'num_images' not in st.session_state: st.session_state.num_images = 1
-if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 50 # Fal default
-if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False # AS REQUESTED
+if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 50
+if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False 
 
 # --- VIDEO DEFAULTS (Wan-I2V / SVD-like) ---
 if 'video_prompt' not in st.session_state: st.session_state.video_prompt = "A majestic banana riding a futuristic, glowing skateboard in space, cinematic."
 if 'video_result_url' not in st.session_state: st.session_state.video_result_url = None
-if 'video_width' not in st.session_state: st.session_state.video_width = 832 # DEFAULT 480p equivalent
-if 'video_height' not in st.session_state: st.session_state.video_height = 480 # DEFAULT 480p equivalent
+if 'video_width' not in st.session_state: st.session_state.video_width = 832 
+if 'video_height' not in st.session_state: st.session_state.video_height = 480 
 if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.7 
-if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127 # Mid-range motion
-if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02 # Low creative augmentation
+if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127 
+if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02 
 if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 50 
-if 'video_fps' not in st.session_state: st.session_state.video_fps = 12 # Common SVD FPS
-if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 25 # Common SVD Frames
+if 'video_fps' not in st.session_state: st.session_state.video_fps = 12 
+if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 25 
 if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 
-if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False # AS REQUESTED
+if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False 
 if 'video_seed' not in st.session_state: st.session_state.video_seed = 42
 
 # --- Authentication Logic ---
@@ -154,7 +154,6 @@ def authenticate_video_tab(password_attempt):
     if password_attempt == VIDEO_PASSWORD:
         st.session_state.video_authenticated = True
         st.success("✅ Access Granted!")
-        # Rerunning to clear the password form and show the content
     else:
         st.session_state.video_authenticated = False
         st.error("❌ Incorrect Password.")
@@ -167,9 +166,14 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
     return [mock_url] * num_images
 
 
-def fal_generate_video(prompt, negative_prompt):
-    """MOCK function to simulate video generation with delay."""
+def fal_generate_video(prompt, negative_prompt, input_image_url=None):
+    """
+    MOCK function to simulate video generation with delay.
+    Accepts input_image_url for Image-to-Video feature.
+    """
     time.sleep(3) # Simulate processing time
+    if input_image_url:
+        st.toast(f"Starting Video-from-Image generation with prompt: {prompt}")
     # Public domain video for preview
     return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
 
@@ -179,7 +183,7 @@ def fal_generate_video(prompt, negative_prompt):
 # Logo/Title
 st.markdown('<h1 style="text-align: center; color: var(--primary-color); font-size: 2.5rem;">NANO BANANA X AI 🍌</h1>', unsafe_allow_html=True)
 
-# Tabs: Image first, Video second (AS REQUESTED)
+# Tabs: Image first, Video second
 tab_image, tab_video = st.tabs(["🖼️ Image Generation", "🎥 Video Generation"])
 
 st.markdown("---")
@@ -253,14 +257,15 @@ with tab_image:
             resolution_options = {
                 "512x512": (512, 512),
                 "768x768": (768, 768),
-                "1024x1024": (1024, 1024), # Index 2
+                "1024x1024": (1024, 1024),
                 "2048x2048 (2K)": (2048, 2048),
                 "4096x4096 (4K)": (4096, 4096),
             }
-            # Default to 1024x1024 (index 2) AS REQUESTED
+            # Default to 1024x1024 (index 2)
             selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2, key="img_resolution")
             st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
+            # Sliders reflect new defaults: 0.95 and 4.5
             st.session_state.strength = st.slider("Strength (Img2Img Only)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength")
             st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_scale")
             st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=4, value=st.session_state.num_images, step=1, key="img_num_images")
@@ -328,7 +333,7 @@ with tab_video:
             
             # --- Image Upload Section for Video Source ---
             video_uploaded_file = st.file_uploader(
-                "Upload **source image** for Image-to-Video Generation",
+                "Upload **source image** for Image-to-Video Generation (Optional)",
                 type=["png", "jpg", "jpeg"],
                 key="video_upload_img"
             )
@@ -336,9 +341,10 @@ with tab_video:
             input_video_image_url = None
             if video_uploaded_file is not None:
                  st.success("Image uploaded. Ready for Video Generation.")
+                 # In a real app, this file would be uploaded to S3/Cloud Storage to get a public URL
                  input_video_image_url = "mock-uploaded-image-url-for-video"
             else:
-                 st.warning("An initial image is typically required for Image-to-Video models.")
+                 st.info("Upload an image to guide the starting frame and style of the video.")
 
             # --- Prompts ---
             st.session_state.video_prompt = st.text_area(
@@ -362,7 +368,8 @@ with tab_video:
                     with st.spinner('Generating video... this can take a few minutes.'):
                         video_url = fal_generate_video(
                             st.session_state.video_prompt, 
-                            st.session_state.negative_prompt
+                            st.session_state.negative_prompt,
+                            input_video_image_url # Passed to the mock function
                         )
                         st.session_state.video_result_url = video_url
                         st.toast("Video generation complete!")
@@ -377,7 +384,7 @@ with tab_video:
                 
                 # Resolution
                 video_resolution_options = {
-                    "832x480 (480P)": (832, 480), # Index 0 (AS REQUESTED)
+                    "832x480 (480P)": (832, 480), # Index 0 (Default)
                     "1024x576 (576P)": (1024, 576),
                     "1280x720 (720P)": (1280, 720),
                 }
