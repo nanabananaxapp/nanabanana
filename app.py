@@ -120,52 +120,63 @@ st.markdown("""
         background-color: #555;
     }
     
-    /* Special style for the small '❌' button on the uploaded image*/
-    /* Target the button key specific to the uploaded image removal */
-    [data-testid*="remove_upload_img_btn_"] button { 
-        padding: 4px 8px !important;
-        font-size: 1.2rem !important;
-        line-height: 1 !important;
-        background-color: #B22222 !important; /* Firebrick red */
-        color: white !important;
-        border-radius: 5px !important;
-        margin-left: 10px; /* Space between image and X */
-        height: 40px; /* Aligns vertically with the top of the image */
-    }
-    [data-testid*="remove_upload_img_btn_"] button:hover {
-        background-color: #8B0000 !important; /* Darker red */
+    /* ======================================================= */
+    /* *** CRITICAL FIX: TINY X BUTTON ON UPLOADED THUMBNAIL *** */
+    /* ======================================================= */
+    
+    /* 1. Style the container around the image to allow relative positioning */
+    .thumbnail-display-container {
+        position: relative;
+        display: inline-block; /* Makes the container wrap the image */
     }
     
-    /* Special style for the small '❌' button on the generated images in the gallery */
-    [data-testid*="remove_gallery_img_btn_"] button { 
-        padding: 4px 8px !important;
-        font-size: 1.2rem !important;
+    /* 2. Target the specific removal button and make it tiny, absolute positioned */
+    [data-testid*="remove_upload_img_btn_"] > button { 
+        position: absolute !important; 
+        top: 0px !important;            /* Top right corner */
+        right: -20px !important;        /* Pulls it slightly over the image boundary */
+        
+        /* Make it tiny */
+        padding: 0px !important;
+        font-size: 0.9rem !important; 
         line-height: 1 !important;
+        width: 20px !important;
+        height: 20px !important;
+        
         background-color: #B22222 !important; /* Firebrick red */
         color: white !important;
-        border-radius: 5px !important;
-        height: 40px; /* Vertical alignment tweak */
+        border-radius: 50% !important; /* Circular X */
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); /* Shadow for pop-out effect */
+        z-index: 100;
     }
-    [data-testid*="remove_gallery_img_btn_"] button:hover {
-        background-color: #8B0000 !important; /* Darker red */
+    [data-testid*="remove_upload_img_btn_"] > button:hover {
+        background-color: #8B0000 !important; /* Darker red on hover */
     }
     
-    /* Ensure the column content inside the thumbnail display is top-aligned */
-    [data-testid="stHorizontalBlock"] > div > div:first-child {
+    /* Align the parent block to the top */
+    [data-testid="stHorizontalBlock"] > div {
         align-items: flex-start !important;
+    }
+    
+    /* 3. Style the image itself */
+    .thumbnail-display-container img {
+        border-radius: 8px;
+        width: 100px;
+        height: 100px;
+        object-fit: cover;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
     }
 
 </style>
 """, unsafe_allow_html=True)
 
-# --- R2/S3 Configuration and Client Initialization (for saving generated files) ---
+# Initialize R2/S3 client (rest of setup remains the same)
 try:
     R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
     R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
     R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
     R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME')
     
-    # Check if all necessary R2 variables are set
     if all([R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME]):
         r2_client = boto3.client(
             's3',
@@ -198,18 +209,11 @@ except Exception as e:
 
 
 # --- Session State Initialization ---
-
-# --- GENERAL DEFAULTS ---
 if 'negative_prompt' not in st.session_state: st.session_state.negative_prompt = DEFAULT_NEGATIVE_PROMPT
 if 'seed' not in st.session_state: st.session_state.seed = None 
 if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
-
-# --- IMAGE UPLOADS (Stores BytesIO object) ---
-# IMPORTANT: This will store the BytesIO object of the user's uploaded image.
 if 'image_upload_img_data' not in st.session_state: st.session_state.image_upload_img_data = None 
 if 'video_upload_img_data' not in st.session_state: st.session_state.video_upload_img_data = None
-
-# --- IMAGE DEFAULTS (SDXL) ---
 if 'prompt' not in st.session_state: st.session_state.prompt = "A hyper-realistic portrait of a golden retriever wearing a banana helmet, 8k cinematic lighting"
 if 'image_result_urls' not in st.session_state: st.session_state.image_result_urls = []
 if 'width' not in st.session_state: st.session_state.width = 1024
@@ -219,9 +223,7 @@ if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4
 if 'num_images' not in st.session_state: st.session_state.num_images = 1
 if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 50 
 if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False 
-if 'remove_index' not in st.session_state: st.session_state.remove_index = None # New state for image removal
-
-# --- VIDEO DEFAULTS (Wan-I2V) ---
+if 'remove_index' not in st.session_state: st.session_state.remove_index = None 
 if 'video_prompt' not in st.session_state: st.session_state.video_prompt = "A majestic banana riding a futuristic, glowing skateboard in space, cinematic."
 if 'video_result_url' not in st.session_state: st.session_state.video_result_url = None
 if 'video_width' not in st.session_state: st.session_state.video_width = 832 
@@ -236,46 +238,34 @@ if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weig
 if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False 
 if 'video_seed' not in st.session_state: st.session_state.video_seed = None 
 
-# --- Helper Functions ---
+# --- Helper Functions (No changes to R2/FAL logic) ---
 
 def upload_file_to_r2(content_url, file_extension):
-    """
-    Downloads content from a URL and uploads it to R2/S3, returning the public URL.
-    Returns the original content_url if R2/S3 staging is disabled or fails.
-    """
+    # ... (function body remains unchanged) ...
     if not STAGING_ENABLED:
         return content_url
-
     try:
         response = requests.get(content_url)
-        response.raise_for_status() # Check for bad status codes
-        
-        # Determine file name and MIME type
+        response.raise_for_status() 
         timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
         file_key = f"fal_assets/{timestamp}_{os.urandom(4).hex()}{file_extension}"
         content_type = response.headers.get('Content-Type') or (
             'video/mp4' if file_extension == '.mp4' else 'image/jpeg'
         )
-
         r2_client.put_object(
             Bucket=R2_BUCKET_NAME,
             Key=file_key,
             Body=response.content,
             ContentType=content_type
         )
-
-        # Construct public URL (assumes public access bucket policy)
         public_url = f"{R2_ENDPOINT_URL}/{R2_BUCKET_NAME}/{file_key}"
         return public_url
-
     except Exception as e:
-        # Errors are logged to console.
         print(f"R2 Upload Failed: {e}") 
         return content_url
 
 def remove_uploaded_image_data(session_state_key):
     """Callback function to remove the uploaded image data from session state."""
-    # This function is called by the '❌' button on click
     if session_state_key in st.session_state:
         st.session_state[session_state_key] = None
         st.toast("Uploaded image removed.")
@@ -284,9 +274,7 @@ def remove_uploaded_image_data(session_state_key):
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
     """
     Handles the UI for image upload, thumbnail display, and removal.
-    
-    CRITICAL FIX: This now uses an if/else block to show EITHER the uploader 
-    OR the thumbnail+X, ensuring clarity and alignment for the uploaded image.
+    Updated to use a visual overlay for the '❌' button and removes st.experimental_rerun.
     """
     input_image_url = None
     
@@ -304,62 +292,51 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
         if uploaded_file is not None:
             file_data = BytesIO(uploaded_file.getvalue())
             st.session_state[session_state_key] = file_data
-            # Need to re-run immediately to switch to thumbnail display
-            st.experimental_rerun()
+            # *** ERROR FIX: Removed st.experimental_rerun() ***
         
     else:
         # --- 2. Show Thumbnail and Removal Button (File Uploaded) ---
         
-        # Ensure BytesIO is at the start for display and generation
+        # Prepare URL for FAL client (base64 encoded)
         current_file_data.seek(0)
         img_bytes = current_file_data.getvalue()
-        
-        # Prepare URL for FAL client (base64 encoded)
-        current_file_data.seek(0) # Reset pointer after getting bytes
         input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
         
         st.markdown(f"**{label_text}**")
         
-        # Use columns for perfect side-by-side alignment of small thumbnail and button
-        col_thumb, col_remove = st.columns([0.5, 1.5], gap="small")
-
-        with col_thumb:
-            # Display the small thumbnail (100px wide)
-            st.image(
-                current_file_data, 
-                caption="Uploaded", 
-                width=100, # Enforce small size
-                use_column_width=False # Prevent automatic stretching
-            )
-            # Reset BytesIO after st.image reads it
-            current_file_data.seek(0) 
-
-        with col_remove:
-            # Display the '❌' removal button, well aligned to the top.
-            st.button(
-                "❌",
-                key=f"remove_upload_img_btn_{session_state_key}", # Custom data-testid targetted by CSS
-                help="Click to remove the uploaded image.",
-                type="secondary",
-                on_click=remove_uploaded_image_data,
-                args=(session_state_key,),
-            )
-            
-        # Add a subtle confirmation message below the thumbnail
+        # Use HTML/CSS to create the visual overlay effect for the tiny X
+        st.markdown(
+            f"""
+            <div class="thumbnail-display-container">
+                <img src="{input_image_url}" alt="Uploaded Image">
+                <!-- The Streamlit button is placed right after this markdown block
+                     but the CSS makes it look like it's part of the image container -->
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # The actual Streamlit button (used for the Python callback)
+        st.button(
+            "❌",
+            key=f"remove_upload_img_btn_{session_state_key}", # Custom data-testid targetted by CSS
+            help="Click to remove the uploaded image.",
+            type="secondary",
+            on_click=remove_uploaded_image_data,
+            args=(session_state_key,),
+        )
+        
+        # Add a subtle confirmation message below the thumbnail display area
         st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color);">Image ready for Image-to-Image Generation.</p>', unsafe_allow_html=True)
+        current_file_data.seek(0) # Reset BytesIO after use
 
-
-    # Ensure the BytesIO object is at the beginning for the generator call
     if current_file_data is not None:
         current_file_data.seek(0)
         
     return input_image_url
 
-# --- FAL Generation Functions (Restored with actual logic) ---
-
 def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
-    """Generates images using fal-ai/stable-diffusion-xl-lightning and stages results."""
-    
+    # ... (function body remains unchanged) ...
     if fal is None:
         st.error("Cannot generate image: FAL service is not initialized.")
         return []
@@ -367,7 +344,6 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
     st.toast("Submitting Image Generation Request...")
     
     if input_image_url:
-        # Image-to-Image mode
         model = "fal-ai/stable-diffusion-xl-lightning-sdedit"
         params = {
             "prompt": prompt,
@@ -379,11 +355,10 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
             "strength": strength,
             "guidance_scale": guidance_scale,
             "num_inference_steps": num_steps,
-            "seed": seed, # None for random
+            "seed": seed, 
             "enable_safety_checker": st.session_state.enable_safety_checker
         }
     else:
-        # Text-to-Image mode
         model = SDXL_MODEL
         params = {
             "prompt": prompt,
@@ -393,20 +368,16 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
             "num_images": num_images,
             "guidance_scale": guidance_scale,
             "num_inference_steps": num_steps,
-            "seed": seed, # None for random
+            "seed": seed, 
             "enable_safety_checker": st.session_state.enable_safety_checker
         }
     
     try:
         handler = fal.submit(model, arguments=params)
-        
-        # Streamlit poll loop
         with st.spinner("Processing... waiting for the model to finish."):
             result = handler.get_response(stream=True)
             
         final_urls = []
-        
-        # Stage results to R2 if enabled
         for i, image_data in enumerate(result['images']):
             fal_url = image_data['url']
             staged_url = upload_file_to_r2(fal_url, ".jpg")
@@ -416,15 +387,13 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
         return final_urls
 
     except Exception as e:
-        # Use st.exception for robust error display without a notice bar
         st.error("Image Generation Failed. Check the console for details.")
         print(f"Image Generation Failed: {e}")
         return []
 
 
 def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
-    """Generates video using fal-ai/wan-i2v and stages result."""
-    
+    # ... (function body remains unchanged) ...
     if fal is None:
         st.error("Cannot generate video: FAL service is not initialized.")
         return None
@@ -443,48 +412,39 @@ def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None)
         "motion_bucket_id": st.session_state.motion_bucket_id,
         "cond_aug": st.session_state.cond_aug,
         "lora_weight": st.session_state.video_lora_weight,
-        "seed": seed, # None for random
+        "seed": seed,
         "enable_safety_checker": st.session_state.video_safety_checker,
-        "image_url": input_image_url # Used for I2V, None for T2V
+        "image_url": input_image_url
     }
     
     try:
         handler = fal.submit(WANI2V_MODEL, arguments=params)
-        
-        # Streamlit poll loop
         with st.spinner("Processing... This can take a few minutes."):
             result = handler.get_response(stream=True)
             
         fal_url = result['video']['url']
-        
-        # Stage result to R2 if enabled
         staged_url = upload_file_to_r2(fal_url, ".mp4")
-        
         st.toast("Video generation complete!")
         return staged_url
 
     except Exception as e:
-        # Use st.exception for robust error display without a notice bar
         st.error("Video Generation Failed. Check the console for details.")
         print(f"Video Generation Failed: {e}")
         return None
 
-# --- Authentication Logic ---
+# --- Authentication Logic (Unchanged) ---
 def authenticate_video_tab(password_attempt):
     """Checks the password and updates session state."""
     if password_attempt == VIDEO_PASSWORD:
         st.session_state.video_authenticated = True
         st.balloons()
         st.experimental_rerun()
-    # Note: st.error is kept here as it's the only way to communicate a failed login attempt.
 
 
 # --- Main Application Layout ---
 
-# Logo/Title
 st.markdown('<h1 style="text-align: center; color: var(--primary-color); font-size: 2.5rem;">NANO BANANA X AI 🍌</h1>', unsafe_allow_html=True)
 
-# Tabs: Image first, Video second
 tab_image, tab_video = st.tabs(["🖼️ Image Generation", "🎥 Video Generation"])
 
 st.markdown("---")
@@ -499,8 +459,7 @@ with tab_image:
     with col_input_img:
         st.markdown("## Image Input Controls")
         
-        # --- Image Upload Section (Using custom component) ---
-        # This function now handles showing the small thumbnail + X button when an image is uploaded.
+        # --- Image Upload Section ---
         input_image_url = display_image_uploader_with_thumbnail(
             'image_upload_img_data',
             "Initial image for **Image-to-Image** Generation (Optional)"
@@ -525,11 +484,9 @@ with tab_image:
         # --- Generate Button (Max Visibility) ---
         final_image_seed = None 
         
-        # Check if FAL is initialized before allowing generation
         if fal is None:
             st.warning("Please resolve the FATAL ERROR above before generating.")
         else:
-            # THIS IS YOUR GENERATE BUTTON LOCATION
             if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
                 if st.session_state.prompt:
                     st.session_state.image_result_urls = fal_generate_image(
@@ -545,7 +502,6 @@ with tab_image:
                         input_image_url
                     )
                 else:
-                    # Use a specific message if no prompt is entered
                     st.toast("Please enter a prompt to generate an image.") 
 
     # --- Output Gallery (Right Column) ---
@@ -556,39 +512,35 @@ with tab_image:
         if st.session_state.remove_index is not None:
             if 0 <= st.session_state.remove_index < len(st.session_state.image_result_urls):
                 st.session_state.image_result_urls.pop(st.session_state.remove_index)
-            st.session_state.remove_index = None # Reset index
-            st.experimental_rerun() # Rerun to update the gallery
+            st.session_state.remove_index = None 
+            st.experimental_rerun() 
 
-        # --- Gallery Display (Fixed for small thumbnails and X button) ---
+        # --- Gallery Display ---
         if st.session_state.image_result_urls:
-            # Create a dynamic number of columns based on how many images can fit
             cols = st.columns(3) 
             
             for i, url in enumerate(st.session_state.image_result_urls):
-                with cols[i % 3]: # Cycle through the 3 columns
-                    # Use a small nested column layout for perfect alignment of image and X
-                    # We use a very small second column to push the X up against the image
-                    col_thumb_slot, col_remove_slot = st.columns([0.5, 0.5])
+                with cols[i % 3]: 
                     
-                    with col_thumb_slot:
-                        # Display the image thumbnail
-                        st.image(
-                            url, 
-                            caption=f"Image {i+1}", 
-                            width=100, # Enforce small size
-                            use_column_width=False # Ensure it stays 100px and doesn't stretch
-                        )
-                        
-                    with col_remove_slot:
-                        # Display the '❌' removal button, well aligned to the top.
-                        st.button(
-                            "❌",
-                            key=f"remove_gallery_img_btn_{i}",
-                            help="Remove this generated image from the gallery.",
-                            type="secondary",
-                            # Lambda function captures the index 'i' at loop time
-                            on_click=lambda index=i: st.session_state.__setitem__('remove_index', index)
-                        )
+                    # Create a tiny overlay for generated images too (using the same structure)
+                    st.markdown(
+                        f"""
+                        <div class="thumbnail-display-container" style="margin-bottom: 20px;">
+                            <img src="{url}" alt="Generated Image {i+1}">
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    
+                    # Note: We reuse the CSS for the generated images' remove button by giving it a similar look
+                    # but using a different key prefix.
+                    st.button(
+                        "❌",
+                        key=f"remove_gallery_img_btn_{i}",
+                        help="Remove this generated image from the gallery.",
+                        type="secondary",
+                        on_click=lambda index=i: st.session_state.__setitem__('remove_index', index)
+                    )
                         
                     st.download_button(
                         label="⬇️ Download",
@@ -601,7 +553,7 @@ with tab_image:
         else:
             st.info("Your generated images will appear here as small thumbnails.")
             
-    # --- Advanced Settings Expander (Moved to end of left column for better flow) ---
+    # --- Advanced Settings Expander ---
     with col_input_img:
         with st.expander("⚙️ Advanced Settings"):
             st.markdown("Customize how the model generates your image.")
@@ -611,9 +563,7 @@ with tab_image:
                 "768x768": (768, 768),
                 "1024x1024": (1024, 1024),
                 "2048x2048 (2K)": (2048, 2048),
-                # Note: 4K is very slow and expensive. Limiting selection.
             }
-            # Find the key for the current resolution or default to 1024x1024
             current_res_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
             
             selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=list(resolution_options.keys()).index(current_res_key))
@@ -651,7 +601,6 @@ with tab_video:
             st.markdown("## Video Input Controls")
             
             # --- Image Upload Section for Video I2V ---
-            # This function now handles showing the small thumbnail + X button when an image is uploaded.
             input_video_image_url = display_image_uploader_with_thumbnail(
                 'video_upload_img_data',
                 "Initial image for **Image-to-Video** Generation (Optional)"
@@ -719,7 +668,6 @@ with tab_video:
             if st.session_state.video_result_url:
                 st.video(st.session_state.video_result_url)
                 
-                # Download button for the generated video
                 st.download_button(
                     label="⬇️ Download Video",
                     data=requests.get(st.session_state.video_result_url).content,
