@@ -9,18 +9,19 @@ from io import BytesIO
 from urllib.request import urlopen
 import boto3
 from botocore.exceptions import ClientError
+import time # For exponential backoff
 
 # Define the secret password for the video tab
 VIDEO_PASSWORD = "f6676kwp"
 
-# --- App Configuration and Styling ---
+# --- App Configuration and Styling (EXACTLY AS PROVIDED) ---
 st.set_page_config(
     page_title="NANO BANANA X AI",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for a dark, professional look (taken from user's provided file)
+# Custom CSS for a dark, professional look
 st.markdown("""
 <style>
     /* Hide Streamlit UI elements */
@@ -146,38 +147,30 @@ if not FAL_KEY:
     st.error("❌ A required FAL_KEY secret is missing. The application cannot run without it.")
     st.stop()
 
-# Set the Fal key globally for fal_client.run() - FIX FOR ATTRIBUTE ERROR
+# Set the Fal key globally for fal_client.run()
 fal_client.key = FAL_KEY
 
 # --- Cloudflare R2 Configuration and File Management ---
-# R2 bucket name - you can change this or keep it in secrets
+# R2 bucket name
 R2_BUCKET_NAME = get_secret("R2_BUCKET_NAME", "app-generations")
 
 @st.cache_resource
 def get_r2_client():
-    """
-    Creates and returns an S3 client configured for Cloudflare R2
-    using credentials from Streamlit secrets.
-    """
+    """Creates and returns an S3 client configured for Cloudflare R2"""
     try:
-        # Check if R2 credentials exist in secrets
         required_keys = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT_URL"]
         missing_keys = [key for key in required_keys if key not in st.secrets]
         
         if missing_keys:
-            # st.warning(f"R2 secrets missing: {', '.join(missing_keys)}. Skipping storage functionality.")
             return None
 
-        # Create S3 client configured for R2
         s3_client = boto3.client(
             's3',
             endpoint_url=st.secrets["R2_ENDPOINT_URL"],
             aws_access_key_id=st.secrets["R2_ACCESS_KEY_ID"],
             aws_secret_access_key=st.secrets["R2_SECRET_ACCESS_KEY"],
-            region_name='auto' # R2 uses 'auto' for region
+            region_name='auto' 
         )
-        
-        # Test connection by listing buckets
         s3_client.list_buckets()
         return s3_client
         
@@ -198,7 +191,6 @@ def ensure_bucket_exists(s3_client, bucket_name):
     except ClientError as e:
         error_code = int(e.response['Error']['Code'])
         if error_code == 404:
-            # Bucket doesn't exist, create it
             try:
                 s3_client.create_bucket(Bucket=bucket_name)
                 return True
@@ -331,13 +323,16 @@ def upload_files_to_fal(uploaded_files):
         # Unique identifier based on name and size to use as cache key
         file_id = f"{uploaded_file.name}_{uploaded_file.size}"
         
+        # Initialize cache if missing
+        if 'uploaded_image_urls' not in st.session_state:
+            st.session_state.uploaded_image_urls = {}
+            
         # Check if the URL is already cached
         if file_id in st.session_state.uploaded_image_urls:
             uploaded_image_urls[file_id] = st.session_state.uploaded_image_urls[file_id]
             continue
 
         # If not cached, upload the file
-        # Use tempfile to handle file bytes
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.type.split('/')[-1]}") as temp_file:
             temp_file.write(uploaded_file.getvalue())
             fal_image_url = fal_client.upload_file(temp_file.name)
@@ -348,8 +343,7 @@ def upload_files_to_fal(uploaded_files):
     st.session_state.uploaded_image_urls.update(uploaded_image_urls)
     return uploaded_image_urls
 
-# --- Session State Initialization ---
-# Seedream (Image-to-Image) Defaults
+# --- Session State Initialization (Retained) ---
 if 'generated_images' not in st.session_state: st.session_state.generated_images = {}
 if 'strength' not in st.session_state: st.session_state.strength = 0.95
 if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5
@@ -357,13 +351,11 @@ if 'num_images' not in st.session_state: st.session_state.num_images = 1
 if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 40
 if 'seed' not in st.session_state: st.session_state.seed = None
 if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False
-if 'width' not in st.session_state: st.session_state.width = 1024 # Default to 1024
-if 'height' not in st.session_state: st.session_state.height = 1024 # Default to 1024
+if 'width' not in st.session_state: st.session_state.width = 1024 
+if 'height' not in st.session_state: st.session_state.height = 1024 
 if 'is_generating_clicked' not in st.session_state: st.session_state.is_generating_clicked = False
 if 'prompt' not in st.session_state: st.session_state.prompt = ""
 if 'negative_prompt' not in st.session_state: st.session_state.negative_prompt = "low quality, bad anatomy, bad hands, low resolution, worst quality, watermark"
-
-# Wan-I2V (Image-to-Video) Defaults
 if 'video_generated_data' not in st.session_state: st.session_state.video_generated_data = None
 if 'video_prompt' not in st.session_state: st.session_state.video_prompt = ""
 if 'video_negative_prompt' not in st.session_state: st.session_state.video_negative_prompt = "" 
@@ -380,8 +372,6 @@ if 'video_safety_checker' not in st.session_state: st.session_state.video_safety
 if 'video_is_generating_clicked' not in st.session_state: st.session_state.video_is_generating_clicked = False
 if 'video_seed' not in st.session_state: st.session_state.video_seed = None
 if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
-
-# Common Session State
 if 'uploaded_file_objects' not in st.session_state: st.session_state.uploaded_file_objects = None
 if 'uploaded_image_urls' not in st.session_state: st.session_state.uploaded_image_urls = {}
 
@@ -396,7 +386,20 @@ def authenticate_video_tab(password_attempt):
         st.error("❌ Incorrect Password.")
         st.session_state.video_authenticated = False
 
-# --- Main App Logic and Functions ---
+# --- Core Generation Function ---
+
+def call_fal_with_retry(endpoint, arguments, max_retries=3):
+    """Calls fal_client.run with exponential backoff for resilience."""
+    for attempt in range(max_retries):
+        try:
+            return fal_client.run(endpoint, arguments=arguments)
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                # print(f"Fal call failed, retrying in {wait_time}s... Error: {e}")
+                time.sleep(wait_time)
+            else:
+                raise
 
 def generate_images():
     """Handles the Fal AI Seedream image generation process."""
@@ -405,22 +408,17 @@ def generate_images():
         
         if not st.session_state.uploaded_file_objects:
             st.error("❌ Please upload at least one image before generating.")
-            st.session_state.is_generating_clicked = False
             return
         
         current_prompt = st.session_state.get('prompt', '').strip()
         if not current_prompt:
             st.error("❌ Please enter a prompt before generating.")
-            st.session_state.is_generating_clicked = False
             return
         
-        # Upload image to Fal (or use cached URLs)
         uploaded_file_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
-        # Base prompt for Seedream
-        # Keep the base prompt as it was intended for quality
+        # Base prompt for Seedream (as defined in original logic)
         base_prompt = ", Do not change the face appearance, the person's body structure is always like the original!!! But pose and the scene and moment and can be different when relevant. change outfit only when asked to. amazing details, detailed real skin-texture, body parts are always very detailed, perfect, and realistic. top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, DSLR quality."
-        
         final_prompt = current_prompt + base_prompt
 
         arguments = {
@@ -439,15 +437,16 @@ def generate_images():
         if st.session_state.seed is not None:
             arguments["seed"] = int(st.session_state.seed)
 
-        # Using fal_client.run directly
-        response = fal_client.run(
+        # Call Fal with retry logic
+        response = call_fal_with_retry(
             "fal-ai/bytedance/seedream/v4/edit",
-            arguments=arguments
+            arguments
         )
         
         if 'images' in response and len(response['images']) > 0:
             image_data_with_bytes = []
             for image in response['images']:
+                # Decode image bytes
                 with urlopen(image['url']) as img_response:
                     image_bytes = BytesIO(img_response.read()).getvalue()
                     image_data_with_bytes.append({
@@ -460,15 +459,6 @@ def generate_images():
                 "timestamp": datetime.datetime.now().isoformat(),
                 "model": "Seedream 4",
                 "prompt": final_prompt,
-                "negative_prompt": st.session_state.negative_prompt,
-                "strength": st.session_state.strength,
-                "guidance_scale": st.session_state.guidance_scale,
-                "num_images": st.session_state.num_images,
-                "num_inference_steps": st.session_state.num_inference_steps,
-                "enable_safety_checker": st.session_state.enable_safety_checker,
-                "seed": st.session_state.seed,
-                "width": st.session_state.width,
-                "height": st.session_state.height,
                 "generated_urls": [img['url'] for img in image_data_with_bytes]
             }
             
@@ -477,7 +467,7 @@ def generate_images():
             if s3_client:
                 save_generation(s3_client, st.session_state.uploaded_file_objects, image_data_with_bytes, generation_params)
         else:
-            st.error("❌ No images were generated. Please try again.")
+            st.error("❌ No images were generated. The model response was empty.")
 
     except Exception as e:
         st.error(f"❌ An error occurred during image generation: {str(e)}")
@@ -490,25 +480,18 @@ def generate_video():
     try:
         st.session_state.video_generated_data = None
         
-        # Check for image upload (only 1 image needed)
         uploaded_files = st.session_state.uploaded_file_objects
         if not uploaded_files or len(uploaded_files) == 0:
             st.error("❌ Please upload a single image before generating.")
-            st.session_state.video_is_generating_clicked = False
             return
             
-        if len(uploaded_files) > 1:
-            # Removed the sidebar warning as it was a visual distraction
-            pass 
-
         current_prompt = st.session_state.get('video_prompt', '').strip()
         if not current_prompt:
             st.error("❌ Please enter a prompt before generating.")
-            st.session_state.video_is_generating_clicked = False
             return
         
-        # Upload image to Fal (or use cached URLs)
         uploaded_file_urls = upload_files_to_fal(uploaded_files)
+        # Wan-I2V only uses the first image
         image_url_to_use = list(uploaded_file_urls.values())[0]
 
         arguments = {
@@ -530,11 +513,11 @@ def generate_video():
         if st.session_state.video_seed is not None:
             arguments["seed"] = int(st.session_state.video_seed)
 
-        # Use st.spinner for in-line feedback
+        # Call Fal with retry logic
         with st.spinner("⏳ Video generation can take 1-3 minutes. Please wait..."):
-            response = fal_client.run(
+            response = call_fal_with_retry(
                 "fal-ai/wan-i2v",
-                arguments=arguments
+                arguments
             )
         
         if 'video' in response and response['video']:
@@ -554,18 +537,6 @@ def generate_video():
                 "timestamp": datetime.datetime.now().isoformat(),
                 "model": "Wan-I2V",
                 "prompt": current_prompt,
-                "negative_prompt": st.session_state.video_negative_prompt,
-                "strength": st.session_state.video_strength,
-                "motion_bucket_id": st.session_state.motion_bucket_id,
-                "cond_aug": st.session_state.cond_aug,
-                "num_inference_steps": st.session_state.video_num_inference_steps,
-                "fps": st.session_state.video_fps,
-                "num_frames": st.session_state.video_num_frames,
-                "lora_weight": st.session_state.video_lora_weight,
-                "enable_safety_checker": st.session_state.video_safety_checker,
-                "seed": st.session_state.video_seed,
-                "width": st.session_state.video_width,
-                "height": st.session_state.video_height,
                 "generated_url": video_url
             }
             
@@ -584,9 +555,8 @@ def generate_video():
 
 # --- UI Layout ---
 
-# Handle generation clicks
+# Handle generation clicks (Loading Overlay)
 if st.session_state.is_generating_clicked or st.session_state.video_is_generating_clicked:
-    # Use different messages for better feedback
     spinner_text = "Working on your video masterpiece (This may take a few minutes)..." if st.session_state.video_is_generating_clicked else "Working on your image masterpiece..."
     
     st.markdown(f"""
@@ -601,7 +571,7 @@ if st.session_state.is_generating_clicked or st.session_state.video_is_generatin
     elif st.session_state.video_is_generating_clicked:
         generate_video()
         
-    st.rerun()
+    st.rerun() # Reruns to update the UI once generation is complete
 
 
 st.title("NANO BANANA X AI")
@@ -614,7 +584,7 @@ tab_image, tab_video = st.tabs(["🖼️ Image to Image (Seedream)", "🎥 Image
 
 
 # ----------------------------------------------------
-# TAB 1: Image to Image (Seedream) - Unprotected
+# TAB 1: Image to Image (Seedream) - Unprotected (REPLICATED LAYOUT)
 # ----------------------------------------------------
 with tab_image:
     
@@ -623,11 +593,11 @@ with tab_image:
     
     if st.session_state.get('generated_images', {}).get('seedream'):
         num_results = len(st.session_state.generated_images['seedream'])
-        # Use columns for displaying results side-by-side
+        # Display results in columns up to 2
         cols_output = st.columns(min(num_results, 2))
         
         for i, image_data in enumerate(st.session_state.generated_images['seedream']):
-            # Cycle through 2 columns for layout
+            # Cycle through 2 columns for a clean look
             with cols_output[i % 2]:
                 st.image(image_data['url'], caption=f"Result {i+1}", use_container_width=True)
                 
@@ -656,14 +626,12 @@ with tab_image:
     if st.session_state.uploaded_file_objects:
         st.markdown("**Your Current Uploads**")
         
-        # Display thumbnails in columns
+        # Display thumbnails in columns (MAX 4)
         cols = st.columns(min(len(st.session_state.uploaded_file_objects), 4))
         for i, uploaded_file in enumerate(st.session_state.uploaded_file_objects):
             if i < 4: 
                 try:
                     caption = f"Image {i+1}"
-                    if i == 0:
-                        caption += " (Primary for Video)"
                     cols[i].image(uploaded_file, caption=caption, use_column_width="always")
                 except Exception:
                     cols[i].text(f"{uploaded_file.name}")
@@ -679,13 +647,12 @@ with tab_image:
     
     st.markdown("---")
     
-    st.button("🚀 Generate Image", key="generate_image_btn", type="primary", use_container_width=True)
-    if st.session_state.generate_image_btn:
+    # Generate Button
+    if st.button("🚀 Generate Image", key="generate_image_btn", type="primary", use_container_width=True):
         st.session_state.is_generating_clicked = True
         st.rerun()
 
-
-    # 3. Advanced Settings
+    # 3. Advanced Settings (After the button, as in original)
     with st.expander("⚙️ Advanced Settings"):
         
         resolution_options = {
@@ -696,15 +663,17 @@ with tab_image:
             "4096x4096 (4K)": (4096, 4096),
         }
         
-        # Determine the correct index for the selectbox based on current state
+        # Use simple selectbox structure from original
         current_res_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
-        default_index = list(resolution_options.keys()).index(current_res_key)
-        
-        selected_resolution = st.selectbox("Resolution", list(resolution_options.keys()), index=default_index, key="img_resolution_select")
+        # Ensure index=2 for 1024x1024 as per the user's file
+        default_index = list(resolution_options.keys()).index("1024x1024")
+
+        selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=default_index, key="img_resolution_select")
         st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
-        st.session_state.strength = st.slider("Strength (Image Fidelity)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength_slider")
-        st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_slider")
+        # Sliders - linear flow as per original
+        st.session_state.strength = st.slider("Strength", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength_slider")
+        st.session_state.guidance_scale = st.slider("Guidance Scale", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_slider")
         st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=4, value=st.session_state.num_images, step=1, key="img_num_images_slider")
         st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1, key="img_steps_slider")
         
@@ -727,7 +696,7 @@ with tab_video:
         if st.session_state.get('video_generated_data'):
             video_data = st.session_state.video_generated_data
             
-            # Use columns to ensure the video isn't huge
+            # Use columns to center the video output
             col_vid_center = st.columns([0.1, 0.8, 0.1])[1]
             with col_vid_center:
                 st.video(video_data['bytes'], format='video/mp4', start_time=0)
@@ -757,14 +726,15 @@ with tab_video:
         
         st.markdown("---")
 
-        st.button("🎥 Generate Video", key="generate_video_btn", type="primary", use_container_width=True)
-        if st.session_state.generate_video_btn:
+        # Generate Button
+        if st.button("🎥 Generate Video", key="generate_video_btn", type="primary", use_container_width=True):
             st.session_state.video_is_generating_clicked = True
             st.rerun()
 
         # 3. Advanced Settings
         with st.expander("⚙️ Advanced Settings (Wan-I2V)"):
             
+            # Two columns for density
             col_res, col_frames = st.columns(2)
             with col_res:
                 video_resolution_options = {
