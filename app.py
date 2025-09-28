@@ -10,7 +10,7 @@ from io import BytesIO
 import requests
 import boto3
 from botocore.exceptions import ClientError
-from PIL import Image
+from PIL import Image # CRITICAL: Ensure PIL is imported for reliable image handling
 
 # Define Constants
 VIDEO_PASSWORD = "f6676kwp"
@@ -124,47 +124,59 @@ st.markdown("""
     /* *** CRITICAL FIX: TINY X BUTTON ON UPLOADED THUMBNAIL *** */
     /* ======================================================= */
     
-    /* 1. Style the container around the image to allow relative positioning */
-    .thumbnail-display-container {
-        position: relative;
-        display: inline-block; /* Makes the container wrap the image */
+    /* Wrapper to contain both image and button and define relative positioning scope */
+    .thumbnail-wrapper {
+        position: relative; 
+        display: inline-block; /* Crucial: make wrapper only as wide as contents */
+        /* Set margin-bottom to make space for the success message below */
+        margin-bottom: 25px; 
     }
     
-    /* 2. Target the specific removal button and make it tiny, absolute positioned */
-    [data-testid*="remove_upload_img_btn_"] > button { 
+    /* Target the Streamlit image container within the wrapper and set its properties */
+    .thumbnail-wrapper [data-testid="stImage"] {
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+        margin-bottom: 0px !important; /* Ensure no extra space below the image */
+        display: block; /* Ensure image takes up its own line within the wrapper */
+        overflow: hidden; /* Hide any overflow */
+    }
+
+    /* Target the specific removal button and make it tiny, absolute positioned */
+    /* We position it 5px from the top and 5px from the right of the 100px wide image */
+    .thumbnail-wrapper [data-testid*="remove_upload_img_btn_"] > button { 
         position: absolute !important; 
-        top: 0px !important;            /* Top right corner */
-        right: -20px !important;        /* Pulls it slightly over the image boundary */
+        top: 0px !important;            /* 5px from the top edge of the image container */
+        right: 0px !important;          /* 5px from the right edge of the image container */
         
         /* Make it tiny */
         padding: 0px !important;
-        font-size: 0.9rem !important; 
+        font-size: 0.7rem !important; 
         line-height: 1 !important;
-        width: 20px !important;
-        height: 20px !important;
+        width: 18px !important;
+        height: 18px !important;
         
         background-color: #B22222 !important; /* Firebrick red */
         color: white !important;
         border-radius: 50% !important; /* Circular X */
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); /* Shadow for pop-out effect */
         z-index: 100;
+        
+        /* Adjust position slightly to overlay the image border */
+        transform: translate(50%, -50%); 
     }
-    [data-testid*="remove_upload_img_btn_"] > button:hover {
+    .thumbnail-wrapper [data-testid*="remove_upload_img_btn_"] > button:hover {
         background-color: #8B0000 !important; /* Darker red on hover */
     }
-    
-    /* Align the parent block to the top */
-    [data-testid="stHorizontalBlock"] > div {
-        align-items: flex-start !important;
+
+    /* Ensure generated image results also use clean thumbnails */
+    .generated-image-result {
+        margin-bottom: 20px;
     }
-    
-    /* 3. Style the image itself */
-    .thumbnail-display-container img {
+    .generated-image-result [data-testid="stImage"] img {
         border-radius: 8px;
-        width: 100px;
-        height: 100px;
+        width: 100%;
+        height: 100%;
         object-fit: cover;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
     }
 
 </style>
@@ -201,10 +213,10 @@ try:
     # Initialize the client with explicit key/secret
     fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
 except KeyError:
-    st.error("FATAL ERROR: FAL_KEY or FAL_SECRET is missing from Streamlit secrets. Please configure them.")
+    # No need to show st.error here, the app will run with a warning instead.
     fal = None
 except Exception as e:
-    st.error(f"FATAL ERROR: Could not initialize the FAL AI Client. Details: {e}")
+    # No need to show st.error here, the app will run with a warning instead.
     fal = None
 
 
@@ -238,10 +250,10 @@ if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weig
 if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False 
 if 'video_seed' not in st.session_state: st.session_state.video_seed = None 
 
-# --- Helper Functions (No changes to R2/FAL logic) ---
+# --- Helper Functions ---
 
 def upload_file_to_r2(content_url, file_extension):
-    # ... (function body remains unchanged) ...
+    """Uploads content from a URL to R2 (Cloudflare's S3-compatible storage) if enabled."""
     if not STAGING_ENABLED:
         return content_url
     try:
@@ -273,8 +285,8 @@ def remove_uploaded_image_data(session_state_key):
 
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
     """
-    Handles the UI for image upload, thumbnail display, and removal.
-    Updated to use a visual overlay for the '❌' button and removes st.experimental_rerun.
+    Handles the UI for image upload, using st.image with PIL for reliable thumbnail display 
+    and CSS to overlay the '❌' button.
     """
     input_image_url = None
     
@@ -290,43 +302,54 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
 
         # If a new file is uploaded, update the session state with BytesIO data
         if uploaded_file is not None:
+            # Read the file content into a BytesIO object
             file_data = BytesIO(uploaded_file.getvalue())
             st.session_state[session_state_key] = file_data
-            # *** ERROR FIX: Removed st.experimental_rerun() ***
+            # Note: State change triggers rerun
         
     else:
         # --- 2. Show Thumbnail and Removal Button (File Uploaded) ---
         
-        # Prepare URL for FAL client (base64 encoded)
-        current_file_data.seek(0)
-        img_bytes = current_file_data.getvalue()
-        input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
-        
         st.markdown(f"**{label_text}**")
         
-        # Use HTML/CSS to create the visual overlay effect for the tiny X
-        st.markdown(
-            f"""
-            <div class="thumbnail-display-container">
-                <img src="{input_image_url}" alt="Uploaded Image">
-                <!-- The Streamlit button is placed right after this markdown block
-                     but the CSS makes it look like it's part of the image container -->
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        # 1. Read bytes for FAL (base64) and Streamlit (PIL)
+        current_file_data.seek(0)
+        img_bytes = current_file_data.getvalue()
         
-        # The actual Streamlit button (used for the Python callback)
-        st.button(
-            "❌",
-            key=f"remove_upload_img_btn_{session_state_key}", # Custom data-testid targetted by CSS
-            help="Click to remove the uploaded image.",
-            type="secondary",
-            on_click=remove_uploaded_image_data,
-            args=(session_state_key,),
-        )
+        # Prepare URL for FAL client (must be base64 encoded)
+        input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
         
-        # Add a subtle confirmation message below the thumbnail display area
+        # Container for the image and button for reliable relative positioning via CSS
+        # This div MUST be placed before the image and button components
+        st.markdown('<div class="thumbnail-wrapper">', unsafe_allow_html=True)
+        
+        try:
+            # Create the PIL Image object for reliable display in st.image
+            img_to_display = Image.open(BytesIO(img_bytes))
+            
+            # Display the image thumbnail
+            st.image(img_to_display, width=100, use_column_width=False, output_format='auto') 
+            
+            # The actual Streamlit button (positioned absolutely via CSS, styled as tiny '❌')
+            st.button(
+                "❌",
+                key=f"remove_upload_img_btn_{session_state_key}", 
+                help="Click to remove the uploaded image.",
+                type="secondary",
+                on_click=remove_uploaded_image_data,
+                args=(session_state_key,),
+            )
+            
+        except Exception as e:
+            # Handle corrupted or unsupported files gracefully
+            st.warning("Uploaded file is not a valid image. Please remove it and try again.")
+            input_image_url = None 
+            st.session_state[session_state_key] = None
+        
+        # Close the wrapper div
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Add a subtle confirmation message 
         st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color);">Image ready for Image-to-Image Generation.</p>', unsafe_allow_html=True)
         current_file_data.seek(0) # Reset BytesIO after use
 
@@ -336,7 +359,7 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
     return input_image_url
 
 def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
-    # ... (function body remains unchanged) ...
+    """Submits the image generation request to the FAL API."""
     if fal is None:
         st.error("Cannot generate image: FAL service is not initialized.")
         return []
@@ -393,7 +416,7 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
 
 
 def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
-    # ... (function body remains unchanged) ...
+    """Submits the video generation request to the FAL API (Wan-I2V)."""
     if fal is None:
         st.error("Cannot generate video: FAL service is not initialized.")
         return None
@@ -522,18 +545,10 @@ with tab_image:
             for i, url in enumerate(st.session_state.image_result_urls):
                 with cols[i % 3]: 
                     
-                    # Create a tiny overlay for generated images too (using the same structure)
-                    st.markdown(
-                        f"""
-                        <div class="thumbnail-display-container" style="margin-bottom: 20px;">
-                            <img src="{url}" alt="Generated Image {i+1}">
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                    # Generated Image Display Block
+                    st.markdown('<div class="generated-image-result">', unsafe_allow_html=True)
+                    st.image(url, use_column_width=True)
                     
-                    # Note: We reuse the CSS for the generated images' remove button by giving it a similar look
-                    # but using a different key prefix.
                     st.button(
                         "❌",
                         key=f"remove_gallery_img_btn_{i}",
@@ -549,7 +564,7 @@ with tab_image:
                         mime="image/jpeg",
                         use_container_width=True
                     )
-                    st.markdown("---")
+                    st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.info("Your generated images will appear here as small thumbnails.")
             
