@@ -126,19 +126,28 @@ st.markdown("""
     
     /* Wrapper for the thumbnail to enforce size and spacing */
     .thumbnail-wrapper-simple {
-        margin-top: 10px; /* Space below the filename/uploader widget */
+        margin-top: 10px; 
         margin-bottom: 5px; 
-        width: 100px; /* Constrain the container width */
+        /* Force container width to limit Streamlit's rendering space */
+        width: 100px !important; 
         display: block;
     }
     
-    /* Target the Streamlit image container within the wrapper for grid look */
+    /* Target the Streamlit image component inside the wrapper */
     .thumbnail-wrapper-simple [data-testid="stImage"] {
+        width: 100px !important; /* Fixed width */
+        height: 100px !important; /* Fixed height for a square grid look */
+        /* Use object-fit cover to ensure the image fills the square without stretching */
+        object-fit: cover !important; 
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); /* Subtle shadow for grid pop-out */
-        margin-bottom: 0px !important; 
-        display: block; 
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); 
         overflow: hidden; 
+    }
+    /* Also target the actual <img> tag inside stImage for maximum coercion */
+    .thumbnail-wrapper-simple [data-testid="stImage"] img {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
     }
 
     /* Ensure generated image results also use clean thumbnails */
@@ -285,12 +294,13 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
         input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
         
         # Use a simple container for the small grid display (styled via CSS)
+        # The CSS linked in the <style> block will force this image to 100x100px.
         st.markdown('<div class="thumbnail-wrapper-simple">', unsafe_allow_html=True) 
         
         try:
             img_to_display = Image.open(BytesIO(img_bytes))
             
-            # Display the SMALL image thumbnail (width=100)
+            # Display the SMALL image thumbnail (width=100 hint for Streamlit)
             st.image(img_to_display, width=100, use_column_width=False, output_format='auto') 
             
         except Exception:
