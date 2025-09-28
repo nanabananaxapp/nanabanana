@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for a dark, minimalist look
+# Custom CSS for a dark, professional look (taken from user's provided file)
 st.markdown("""
 <style>
     /* Hide Streamlit UI elements */
@@ -39,9 +39,59 @@ st.markdown("""
         visibility: hidden;
         height: 0%;
     }
+
+    /* Color Palette Variables */
+    :root {
+        --primary-color: #4169E1; /* Royal Blue */
+        --secondary-color: #FFD700; /* Gold */
+        --background-color: #121212; /* Very dark background */
+        --card-background: #1e1e1e; /* Slightly lighter for containers */
+        --text-color: #e0e0e0;
+        --border-color: #3a3a3a;
+    }
+
+    body {
+        background-color: var(--background-color);
+        color: var(--text-color);
+    }
     
-    /* Ensure good button styling */
+    /* Input and Textarea Styling */
+    .stTextArea, .stTextInput, .stNumberInput {
+        background-color: var(--card-background);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 10px;
+    }
+
+    /* Button Styling */
     .stButton>button {
+        font-weight: bold;
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        transition: background-color 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #3150b0;
+    }
+    
+    /* Primary Button Styling */
+    .stButton button[kind="primary"] {
+        background-color: var(--primary-color);
+        color: white;
+    }
+    .stButton button[kind="primary"]:hover {
+        background-color: #3150b0;
+    }
+
+    /* Expander Styling */
+    .streamlit-expanderHeader {
+        background-color: var(--card-background);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 10px;
         font-weight: bold;
     }
     
@@ -65,7 +115,7 @@ st.markdown("""
     
     .spinner-icon {
         border: 8px solid rgba(255, 255, 255, 0.3);
-        border-top: 8px solid #4169E1; /* Royal Blue */
+        border-top: 8px solid var(--primary-color);
         border-radius: 50%;
         width: 60px;
         height: 60px;
@@ -115,6 +165,7 @@ def get_r2_client():
         missing_keys = [key for key in required_keys if key not in st.secrets]
         
         if missing_keys:
+            # st.warning(f"R2 secrets missing: {', '.join(missing_keys)}. Skipping storage functionality.")
             return None
 
         # Create S3 client configured for R2
@@ -367,6 +418,7 @@ def generate_images():
         uploaded_file_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
         # Base prompt for Seedream
+        # Keep the base prompt as it was intended for quality
         base_prompt = ", Do not change the face appearance, the person's body structure is always like the original!!! But pose and the scene and moment and can be different when relevant. change outfit only when asked to. amazing details, detailed real skin-texture, body parts are always very detailed, perfect, and realistic. top camera quality, refine details, enhanced quality!! 8k, very detailed,high-definition, high-fidelity, high-resolution, DSLR quality."
         
         final_prompt = current_prompt + base_prompt
@@ -446,8 +498,8 @@ def generate_video():
             return
             
         if len(uploaded_files) > 1:
-            # Subtle warning, not disruptive
-            st.sidebar.warning("⚠️ Video model uses only the first uploaded image.")
+            # Removed the sidebar warning as it was a visual distraction
+            pass 
 
         current_prompt = st.session_state.get('video_prompt', '').strip()
         if not current_prompt:
@@ -533,24 +585,22 @@ def generate_video():
 # --- UI Layout ---
 
 # Handle generation clicks
-if st.session_state.is_generating_clicked:
+if st.session_state.is_generating_clicked or st.session_state.video_is_generating_clicked:
+    # Use different messages for better feedback
+    spinner_text = "Working on your video masterpiece (This may take a few minutes)..." if st.session_state.video_is_generating_clicked else "Working on your image masterpiece..."
+    
     st.markdown(f"""
     <div class="loading-overlay">
         <div class="spinner-icon"></div>
-        <div class="spinner-text">{"Working on your image masterpiece..."}</div>
+        <div class="spinner-text">{spinner_text}</div>
     </div>
     """, unsafe_allow_html=True)
-    generate_images()
-    st.rerun()
-
-if st.session_state.video_is_generating_clicked:
-    st.markdown(f"""
-    <div class="loading-overlay">
-        <div class="spinner-icon"></div>
-        <div class="spinner-text">{"Working on your video masterpiece (This may take a few minutes)..."}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    generate_video()
+    
+    if st.session_state.is_generating_clicked:
+        generate_images()
+    elif st.session_state.video_is_generating_clicked:
+        generate_video()
+        
     st.rerun()
 
 
@@ -563,104 +613,105 @@ st.markdown("---")
 tab_image, tab_video = st.tabs(["🖼️ Image to Image (Seedream)", "🎥 Image to Video (Wan-I2V)"])
 
 
-# --- Common File Uploader Section ---
-st.subheader("Source Image Uploader")
-uploaded_files = st.file_uploader("Upload one or more images (JPG, PNG, WebP)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="main_uploader")
-
-if uploaded_files:
-    st.session_state.uploaded_file_objects = uploaded_files
-
-if st.session_state.uploaded_file_objects:
-    st.markdown("**Your Current Uploads**")
-    
-    # Display thumbnails (simpler display)
-    cols = st.columns(min(len(st.session_state.uploaded_file_objects), 4))
-    for i, uploaded_file in enumerate(st.session_state.uploaded_file_objects):
-        if i < 4: # Limit displayed thumbnails to 4 for simplicity
-            try:
-                # Use st.image for cleaner display
-                caption = f"Image {i+1}"
-                if i == 0:
-                    caption += " (Used for Video)"
-                cols[i].image(uploaded_file, caption=caption, use_column_width="always")
-            except Exception:
-                # Fallback for display if file type is problematic
-                cols[i].text(f"{uploaded_file.name}")
-st.markdown("---")
-
-
 # ----------------------------------------------------
 # TAB 1: Image to Image (Seedream) - Unprotected
 # ----------------------------------------------------
 with tab_image:
     
-    st.markdown("### **Image Generation Parameters**")
+    # 1. Output Section
+    st.markdown("### **Generated Images**")
     
-    col_controls, col_output = st.columns([1, 1])
-
-    with col_controls:
-        # Prompt and Negative Prompt
-        prompt = st.text_area("🖊 Prompt", placeholder="e.g., A fantastical creature made of crystals, surrounded by a swirling nebula.", height=100, key="image_prompt_input")
-        st.session_state.prompt = prompt
-
-        negative_prompt = st.text_area("🚫 Negative Prompt", placeholder="e.g., low quality, blurry, bad hands.", height=70, key="image_negative_prompt_input")
-        st.session_state.negative_prompt = negative_prompt
-
-        # Advanced Settings
-        st.markdown("---")
-        with st.expander("⚙️ Advanced Settings"):
-            
-            resolution_options = {
-                "512x512": (512, 512),
-                "768x768": (768, 768),
-                "1024x1024": (1024, 1024),
-                "2048x2048 (2K)": (2048, 2048),
-                "4096x4096 (4K)": (4096, 4096),
-            }
-            # Find the correct default index based on current state (1024x1024)
-            current_res = f"{st.session_state.width}x{st.session_state.height}"
-            # Ensure the key exists before indexing
-            default_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
-            default_index = list(resolution_options.keys()).index(default_key)
-
-            selected_resolution = st.selectbox("Resolution", list(resolution_options.keys()), index=default_index, key="img_resolution_select")
-            st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
-
-            st.session_state.strength = st.slider("Strength (Image Fidelity)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength_slider")
-            st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_slider")
-            st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=4, value=st.session_state.num_images, step=1, key="img_num_images_slider")
-            st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1, key="img_steps_slider")
-            seed_input = st.number_input("Seed (0 for random)", value=st.session_state.seed if st.session_state.seed is not None else 0, step=1, format="%d", key="img_seed_input")
-            st.session_state.seed = seed_input if seed_input != 0 else None
-            st.session_state.enable_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.enable_safety_checker, key="img_safety_check")
-
-        st.button("🚀 Generate Image", key="generate_image_btn", type="primary", use_container_width=True)
-        if st.session_state.generate_image_btn:
-            st.session_state.is_generating_clicked = True
-            st.rerun()
+    if st.session_state.get('generated_images', {}).get('seedream'):
+        num_results = len(st.session_state.generated_images['seedream'])
+        # Use columns for displaying results side-by-side
+        cols_output = st.columns(min(num_results, 2))
         
-    with col_output:
-        st.subheader("Generated Images")
+        for i, image_data in enumerate(st.session_state.generated_images['seedream']):
+            # Cycle through 2 columns for layout
+            with cols_output[i % 2]:
+                st.image(image_data['url'], caption=f"Result {i+1}", use_container_width=True)
+                
+                st.download_button(
+                    label="Download",
+                    data=image_data['bytes'],
+                    file_name=f"fal-image_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.png",
+                    mime="image/png",
+                    use_container_width=True
+                )
+    else:
+        st.info("Your generated image(s) will appear here after generation.")
+        st.image("https://placehold.co/1024x1024/2f2f2f/cccccc?text=Output+Preview", use_column_width="auto")
+
+    st.markdown("---")
+
+    # 2. Main Controls Section
+    st.markdown("### **Source Image & Parameters**")
+    
+    # Common File Uploader Section
+    uploaded_files = st.file_uploader("Upload one or more images (JPG, PNG, WebP)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="main_uploader")
+
+    if uploaded_files:
+        st.session_state.uploaded_file_objects = uploaded_files
+
+    if st.session_state.uploaded_file_objects:
+        st.markdown("**Your Current Uploads**")
         
-        if st.session_state.get('generated_images', {}).get('seedream'):
-            num_results = len(st.session_state.generated_images['seedream'])
-            cols_output = st.columns(min(num_results, 2))
-            
-            for i, image_data in enumerate(st.session_state.generated_images['seedream']):
-                # Cycle through 2 columns for layout
-                with cols_output[i % 2]:
-                    st.image(image_data['url'], caption=f"Result {i+1}", use_container_width=True)
-                    
-                    st.download_button(
-                        label="Download",
-                        data=image_data['bytes'],
-                        file_name=f"fal-image_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.png",
-                        mime="image/png",
-                        use_container_width=True
-                    )
-        else:
-            st.info("Your generated image(s) will appear here.")
-            st.image("https://placehold.co/1024x1024/2f2f2f/cccccc?text=Output+Preview", use_column_width="auto")
+        # Display thumbnails in columns
+        cols = st.columns(min(len(st.session_state.uploaded_file_objects), 4))
+        for i, uploaded_file in enumerate(st.session_state.uploaded_file_objects):
+            if i < 4: 
+                try:
+                    caption = f"Image {i+1}"
+                    if i == 0:
+                        caption += " (Primary for Video)"
+                    cols[i].image(uploaded_file, caption=caption, use_column_width="always")
+                except Exception:
+                    cols[i].text(f"{uploaded_file.name}")
+    
+    st.markdown("---")
+    
+    # Prompt and Negative Prompt
+    prompt = st.text_area("🖊 Prompt", placeholder="e.g., A fantastical creature made of crystals, surrounded by a swirling nebula.", height=100, key="image_prompt_input")
+    st.session_state.prompt = prompt
+
+    negative_prompt = st.text_area("🚫 Negative Prompt", placeholder="e.g., low quality, bad anatomy, bad hands, low resolution, worst quality, watermark", height=70, key="image_negative_prompt_input")
+    st.session_state.negative_prompt = negative_prompt
+    
+    st.markdown("---")
+    
+    st.button("🚀 Generate Image", key="generate_image_btn", type="primary", use_container_width=True)
+    if st.session_state.generate_image_btn:
+        st.session_state.is_generating_clicked = True
+        st.rerun()
+
+
+    # 3. Advanced Settings
+    with st.expander("⚙️ Advanced Settings"):
+        
+        resolution_options = {
+            "512x512": (512, 512),
+            "768x768": (768, 768),
+            "1024x1024": (1024, 1024),
+            "2048x2048 (2K)": (2048, 2048),
+            "4096x4096 (4K)": (4096, 4096),
+        }
+        
+        # Determine the correct index for the selectbox based on current state
+        current_res_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
+        default_index = list(resolution_options.keys()).index(current_res_key)
+        
+        selected_resolution = st.selectbox("Resolution", list(resolution_options.keys()), index=default_index, key="img_resolution_select")
+        st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
+
+        st.session_state.strength = st.slider("Strength (Image Fidelity)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength_slider")
+        st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_slider")
+        st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=4, value=st.session_state.num_images, step=1, key="img_num_images_slider")
+        st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1, key="img_steps_slider")
+        
+        seed_input = st.number_input("Seed (0 for random)", value=st.session_state.seed if st.session_state.seed is not None else 0, step=1, format="%d", key="img_seed_input")
+        st.session_state.seed = seed_input if seed_input != 0 else None
+        
+        st.session_state.enable_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.enable_safety_checker, key="img_safety_check")
 
 # ----------------------------------------------------
 # TAB 2: Image to Video (Wan-I2V) - Protected
@@ -669,65 +720,17 @@ with tab_video:
     
     if st.session_state.video_authenticated:
         # --- Authenticated Content ---
-        st.markdown("### **Video Generation Parameters**")
         
-        col_v_controls, col_v_output = st.columns([1, 1])
-
-        with col_v_controls:
-            # Prompts
-            video_prompt = st.text_area("🖊 Video Prompt", placeholder="e.g., A majestic dragon flying over a cyberpunk city at night.", height=100, key="video_prompt_input")
-            st.session_state.video_prompt = video_prompt
+        # 1. Output Section
+        st.markdown("### **Generated Video**")
+        
+        if st.session_state.get('video_generated_data'):
+            video_data = st.session_state.video_generated_data
             
-            video_negative_prompt = st.text_area("🚫 Negative Prompt", placeholder="e.g., blurry, out of focus, poor quality, watermark, text.", height=70, key="video_negative_prompt_input")
-            st.session_state.video_negative_prompt = video_negative_prompt
-            
-            # Advanced Settings (All features included)
-            st.markdown("---")
-            with st.expander("⚙️ Advanced Settings (Wan-I2V)"):
-                
-                col_res, col_frames = st.columns(2)
-                with col_res:
-                    video_resolution_options = {
-                        "832x480": (832, 480),
-                        "1280x720 (720P)": (1280, 720),
-                    }
-                    selected_video_resolution = st.selectbox("Resolution", list(video_resolution_options.keys()), index=0, key="vid_resolution_select")
-                    st.session_state.video_width, st.session_state.video_height = video_resolution_options[selected_video_resolution]
-
-                with col_frames:
-                    st.session_state.video_num_frames = st.slider("Number of Frames (16 to 64)", min_value=16, max_value=64, value=st.session_state.video_num_frames, step=16, key="vid_num_frames_slider")
-                    
-                col_steps, col_fps = st.columns(2)
-                with col_steps:
-                    st.session_state.video_num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=1, key="vid_steps_slider")
-                with col_fps:
-                    st.session_state.video_fps = st.slider("FPS (Max 12)", min_value=1, max_value=12, value=st.session_state.video_fps, step=1, key="vid_fps_slider")
-
-
-                st.session_state.video_strength = st.slider("Strength (Deviation from Image)", min_value=0.0, max_value=1.0, value=st.session_state.video_strength, step=0.01, key="vid_strength_slider")
-                st.session_state.motion_bucket_id = st.slider("Motion Bucket ID (Movement amount)", min_value=1, max_value=255, value=st.session_state.motion_bucket_id, step=1, key="vid_motion_bucket_slider")
-                st.session_state.cond_aug = st.slider("Conditioning Augmentation (Fidelity/Creativity)", min_value=0.0, max_value=0.1, value=st.session_state.cond_aug, step=0.01, format="%.2f", key="vid_cond_aug_slider")
-                st.session_state.video_lora_weight = st.slider("LoRA Weight", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01, key="vid_lora_weight_slider")
-                
-                col_seed, col_safety = st.columns(2)
-                with col_seed:
-                    video_seed_input = st.number_input("Seed (0 for random)", value=st.session_state.video_seed if st.session_state.video_seed is not None else 0, step=1, format="%d", key="vid_seed_input")
-                    st.session_state.video_seed = video_seed_input if video_seed_input != 0 else None
-                with col_safety:
-                    st.session_state.video_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.video_safety_checker, key="vid_safety_check")
-
-            st.button("🎥 Generate Video", key="generate_video_btn", type="primary", use_container_width=True)
-            if st.session_state.generate_video_btn:
-                st.session_state.video_is_generating_clicked = True
-                st.rerun()
-            
-        with col_v_output:
-            st.subheader("Generated Video")
-            
-            if st.session_state.get('video_generated_data'):
-                video_data = st.session_state.video_generated_data
-                
-                st.video(video_data['bytes'], format='video/mp4')
+            # Use columns to ensure the video isn't huge
+            col_vid_center = st.columns([0.1, 0.8, 0.1])[1]
+            with col_vid_center:
+                st.video(video_data['bytes'], format='video/mp4', start_time=0)
                 
                 st.download_button(
                     label="Download Video (MP4)",
@@ -736,9 +739,67 @@ with tab_video:
                     mime="video/mp4",
                     use_container_width=True
                 )
-            else:
-                st.info("Your generated video will appear here.")
-                st.image("https://placehold.co/832x480/2f2f2f/cccccc?text=Video+Output+Preview", use_column_width="auto")
+        else:
+            st.info("Your generated video will appear here. Note: Only the **first** uploaded image is used.")
+            st.image("https://placehold.co/832x480/2f2f2f/cccccc?text=Video+Output+Preview", use_column_width="auto")
+        
+        st.markdown("---")
+        
+        # 2. Controls Section
+        st.markdown("### **Video Generation Parameters**")
+
+        # Prompts
+        video_prompt = st.text_area("🖊 Video Prompt", placeholder="e.g., A majestic dragon flying over a cyberpunk city at night.", height=100, key="video_prompt_input")
+        st.session_state.video_prompt = video_prompt
+        
+        video_negative_prompt = st.text_area("🚫 Negative Prompt", placeholder="e.g., blurry, out of focus, poor quality, watermark, text.", height=70, key="video_negative_prompt_input")
+        st.session_state.video_negative_prompt = video_negative_prompt
+        
+        st.markdown("---")
+
+        st.button("🎥 Generate Video", key="generate_video_btn", type="primary", use_container_width=True)
+        if st.session_state.generate_video_btn:
+            st.session_state.video_is_generating_clicked = True
+            st.rerun()
+
+        # 3. Advanced Settings
+        with st.expander("⚙️ Advanced Settings (Wan-I2V)"):
+            
+            col_res, col_frames = st.columns(2)
+            with col_res:
+                video_resolution_options = {
+                    "832x480": (832, 480),
+                    "1280x720 (720P)": (1280, 720),
+                }
+                # Ensure correct index is used
+                current_v_res_key = next((k for k, v in video_resolution_options.items() if v == (st.session_state.video_width, st.session_state.video_height)), "832x480")
+                default_v_index = list(video_resolution_options.keys()).index(current_v_res_key)
+                
+                selected_video_resolution = st.selectbox("Resolution", list(video_resolution_options.keys()), index=default_v_index, key="vid_resolution_select")
+                st.session_state.video_width, st.session_state.video_height = video_resolution_options[selected_video_resolution]
+
+            with col_frames:
+                st.session_state.video_num_frames = st.slider("Number of Frames (16 to 64)", min_value=16, max_value=64, value=st.session_state.video_num_frames, step=16, key="vid_num_frames_slider")
+                
+            col_steps, col_fps = st.columns(2)
+            with col_steps:
+                st.session_state.video_num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=1, key="vid_steps_slider")
+            with col_fps:
+                st.session_state.video_fps = st.slider("FPS (Max 12)", min_value=1, max_value=12, value=st.session_state.video_fps, step=1, key="vid_fps_slider")
+
+
+            st.session_state.video_strength = st.slider("Strength (Deviation from Image)", min_value=0.0, max_value=1.0, value=st.session_state.video_strength, step=0.01, key="vid_strength_slider")
+            st.session_state.motion_bucket_id = st.slider("Motion Bucket ID (Movement amount)", min_value=1, max_value=255, value=st.session_state.motion_bucket_id, step=1, key="vid_motion_bucket_slider")
+            st.session_state.cond_aug = st.slider("Conditioning Augmentation (Fidelity/Creativity)", min_value=0.0, max_value=0.1, value=st.session_state.cond_aug, step=0.01, format="%.2f", key="vid_cond_aug_slider")
+            st.session_state.video_lora_weight = st.slider("LoRA Weight", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01, key="vid_lora_weight_slider")
+            
+            col_seed, col_safety = st.columns(2)
+            with col_seed:
+                video_seed_input = st.number_input("Seed (0 for random)", value=st.session_state.video_seed if st.session_state.video_seed is not None else 0, step=1, format="%d", key="vid_seed_input")
+                st.session_state.video_seed = video_seed_input if video_seed_input != 0 else None
+            with col_safety:
+                st.session_state.video_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.video_safety_checker, key="vid_safety_check")
+
             
     else:
         # --- Authentication Form ---
