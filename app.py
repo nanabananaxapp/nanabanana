@@ -115,11 +115,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- Session State Initialization (Updated to enforce new defaults) ---
+# --- Session State Initialization (Updated for Wan-I2V defaults and Random Seed) ---
 
 # --- GENERAL DEFAULTS ---
 if 'negative_prompt' not in st.session_state: st.session_state.negative_prompt = DEFAULT_NEGATIVE_PROMPT
-if 'seed' not in st.session_state: st.session_state.seed = 42
+if 'seed' not in st.session_state: st.session_state.seed = None # Always Random (no value)
 if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
 
 # --- IMAGE DEFAULTS (Seedream/SDXL) ---
@@ -127,26 +127,26 @@ if 'prompt' not in st.session_state: st.session_state.prompt = "A hyper-realisti
 if 'image_result_urls' not in st.session_state: st.session_state.image_result_urls = []
 if 'width' not in st.session_state: st.session_state.width = 1024
 if 'height' not in st.session_state: st.session_state.height = 1024
-if 'strength' not in st.session_state: st.session_state.strength = 0.95 # ***UPDATED DEFAULT***
-if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5 # ***UPDATED DEFAULT***
+if 'strength' not in st.session_state: st.session_state.strength = 0.95 # Retained: 0.95
+if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5 # Retained: 4.5
 if 'num_images' not in st.session_state: st.session_state.num_images = 1
-if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 50
+if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 50 
 if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False 
 
-# --- VIDEO DEFAULTS (Wan-I2V / SVD-like) ---
+# --- VIDEO DEFAULTS (Wan-I2V / SVD-like - Matched to fal.ai site defaults) ---
 if 'video_prompt' not in st.session_state: st.session_state.video_prompt = "A majestic banana riding a futuristic, glowing skateboard in space, cinematic."
 if 'video_result_url' not in st.session_state: st.session_state.video_result_url = None
-if 'video_width' not in st.session_state: st.session_state.video_width = 832 
-if 'video_height' not in st.session_state: st.session_state.video_height = 480 
-if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.7 
-if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127 
-if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02 
-if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 50 
-if 'video_fps' not in st.session_state: st.session_state.video_fps = 12 
-if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 25 
-if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 
+if 'video_width' not in st.session_state: st.session_state.video_width = 832 # Wan-I2V Default
+if 'video_height' not in st.session_state: st.session_state.video_height = 480 # Wan-I2V Default
+if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.7 # Wan-I2V Default
+if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127 # Wan-I2V Default
+if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02 # Wan-I2V Default
+if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 50 # Wan-I2V Default
+if 'video_fps' not in st.session_state: st.session_state.video_fps = 16 # Wan-I2V Default (Updated to 16)
+if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 81 # Wan-I2V Default (Updated to 81)
+if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 # Wan-I2V Default (0.7 is common for video strength)
 if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False 
-if 'video_seed' not in st.session_state: st.session_state.video_seed = 42
+if 'video_seed' not in st.session_state: st.session_state.video_seed = None # Always Random (no value)
 
 # --- Authentication Logic ---
 def authenticate_video_tab(password_attempt):
@@ -160,17 +160,14 @@ def authenticate_video_tab(password_attempt):
 
 # --- Mock Generation Functions (Kept for UI demonstration) ---
 def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
-    """MOCK function to simulate image generation."""
+    """MOCK function to simulate image generation. Seed will be None."""
     # Placeholder for the generated image URLs (single golden retriever image placeholder)
     mock_url = f"https://placehold.co/{width}x{height}/4169E1/FFD700?text=NANO+BANANA+X+AI+{width}x{height}"
     return [mock_url] * num_images
 
 
-def fal_generate_video(prompt, negative_prompt, input_image_url=None):
-    """
-    MOCK function to simulate video generation with delay.
-    Accepts input_image_url for Image-to-Video feature.
-    """
+def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
+    """MOCK function to simulate video generation with delay. Seed will be None."""
     time.sleep(3) # Simulate processing time
     if input_image_url:
         st.toast(f"Starting Video-from-Image generation with prompt: {prompt}")
@@ -228,6 +225,9 @@ with tab_image:
         st.markdown("---")
         
         # --- Generate Button ---
+        # The actual seed passed is always None (random) as requested
+        final_image_seed = None 
+        
         if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
             if st.session_state.prompt:
                 with st.spinner('Generating image(s)...'):
@@ -240,7 +240,7 @@ with tab_image:
                         st.session_state.strength, 
                         st.session_state.guidance_scale, 
                         st.session_state.num_inference_steps, 
-                        st.session_state.seed,
+                        final_image_seed, # Always None
                         input_image_url
                     )
                     if st.session_state.image_result_urls:
@@ -265,15 +265,14 @@ with tab_image:
             selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2, key="img_resolution")
             st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
-            # Sliders reflect new defaults: 0.95 and 4.5
+            # Sliders reflect specific defaults: 0.95 and 4.5
             st.session_state.strength = st.slider("Strength (Img2Img Only)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength")
             st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_scale")
             st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=4, value=st.session_state.num_images, step=1, key="img_num_images")
             st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1, key="img_steps")
             
-            st.session_state.seed = st.number_input("Seed (0 for random)", min_value=0, max_value=99999999, value=st.session_state.seed, step=1, key="img_seed_input")
-            if st.session_state.seed == 0:
-                 st.session_state.seed = None
+            # Seed input displayed for UI completeness, but the generation logic forces None (random)
+            st.number_input("Seed (Policy: Always Random)", min_value=0, max_value=0, value=0, step=1, disabled=True, key="img_seed_input_display")
             
             st.session_state.enable_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.enable_safety_checker, key="img_safety_check")
 
@@ -341,7 +340,6 @@ with tab_video:
             input_video_image_url = None
             if video_uploaded_file is not None:
                  st.success("Image uploaded. Ready for Video Generation.")
-                 # In a real app, this file would be uploaded to S3/Cloud Storage to get a public URL
                  input_video_image_url = "mock-uploaded-image-url-for-video"
             else:
                  st.info("Upload an image to guide the starting frame and style of the video.")
@@ -362,6 +360,9 @@ with tab_video:
             
             st.markdown("---")
             
+            # The actual seed passed is always None (random) as requested
+            final_video_seed = None 
+            
             # --- Generate Button ---
             if st.button("🚀 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
                 if st.session_state.video_prompt:
@@ -369,7 +370,8 @@ with tab_video:
                         video_url = fal_generate_video(
                             st.session_state.video_prompt, 
                             st.session_state.negative_prompt,
-                            input_video_image_url # Passed to the mock function
+                            input_video_image_url,
+                            final_video_seed # Always None
                         )
                         st.session_state.video_result_url = video_url
                         st.toast("Video generation complete!")
@@ -380,11 +382,11 @@ with tab_video:
             
             # --- Advanced Settings (ALL FEATURES EXPOSED) ---
             with st.expander("⚙️ Advanced Settings (Wan-I2V / SVD)", expanded=False):
-                st.markdown("Precise control over motion and video output.")
+                st.markdown("Precise control over motion and video output, matching **fal-ai/wan-i2v** defaults.")
                 
                 # Resolution
                 video_resolution_options = {
-                    "832x480 (480P)": (832, 480), # Index 0 (Default)
+                    "832x480 (480P)": (832, 480), # Default
                     "1024x576 (576P)": (1024, 576),
                     "1280x720 (720P)": (1280, 720),
                 }
@@ -397,15 +399,13 @@ with tab_video:
                 st.session_state.cond_aug = st.slider("Conditioning Augmentation", min_value=0.0, max_value=0.1, value=st.session_state.cond_aug, step=0.01, format="%.2f", key="vid_cond_aug_slider")
                 st.session_state.video_lora_weight = st.slider("LoRA Weight (Style adaptation)", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01, key="vid_lora_weight_slider")
                 
-                # Time/Quality Parameters
-                st.session_state.video_num_frames = st.slider("Number of Frames", min_value=16, max_value=64, value=st.session_state.video_num_frames, step=1, key="vid_num_frames_slider")
+                # Time/Quality Parameters (UPDATED)
+                st.session_state.video_num_frames = st.slider("Number of Frames", min_value=16, max_value=100, value=st.session_state.video_num_frames, step=1, key="vid_num_frames_slider")
                 st.session_state.video_fps = st.slider("FPS (Frames per Second)", min_value=1, max_value=24, value=st.session_state.video_fps, step=1, key="vid_fps_slider")
                 st.session_state.video_num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=1, key="vid_steps_slider")
 
-                # Seed and Safety
-                video_seed_input = st.number_input("Seed (0 for random)", min_value=0, max_value=99999999, value=st.session_state.video_seed, step=1, key="vid_seed_input")
-                if video_seed_input == 0:
-                     st.session_state.video_seed = None
+                # Seed input displayed for UI completeness, but the generation logic forces None (random)
+                st.number_input("Seed (Policy: Always Random)", min_value=0, max_value=0, value=0, step=1, disabled=True, key="vid_seed_input_display")
                 
                 st.session_state.video_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.video_safety_checker, key="vid_safety_check")
 
