@@ -233,6 +233,8 @@ if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames
 if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 
 if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False 
 if 'video_seed' not in st.session_state: st.session_state.video_seed = None 
+if 'password_error' not in st.session_state: st.session_state.password_error = None # For authentication error display
+
 
 # --- Helper Functions ---
 
@@ -415,13 +417,19 @@ def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None)
         print(f"Video Generation Failed: {e}")
         return None
 
-# --- Authentication Logic (Unchanged) ---
-def authenticate_video_tab(password_attempt):
-    """Checks the password and updates session state."""
+# --- Authentication Logic (FIXED) ---
+def check_video_password_callback():
+    """Checks the password, updates state, and triggers a rerun if successful."""
+    password_attempt = st.session_state.video_password_input
+    
     if password_attempt == VIDEO_PASSWORD:
         st.session_state.video_authenticated = True
+        st.session_state.password_error = None
         st.balloons()
-        st.experimental_rerun()
+        st.rerun() # Use st.rerun() to force the page state update
+    else:
+        st.session_state.password_error = "Incorrect password. Try again."
+        st.session_state.video_authenticated = False
 
 
 # --- Main Application Layout ---
@@ -448,21 +456,7 @@ with tab_image:
             "Initial image for **Image-to-Image** Generation (Optional)"
         )
         
-        # --- Prompts ---
-        st.session_state.prompt = st.text_area(
-            "Enter your **image prompt**",
-            value=st.session_state.prompt,
-            height=150,
-            key="image_prompt_area"
-        )
-        
-        st.session_state.negative_prompt = st.text_area(
-            "Negative Prompt",
-            value=st.session_state.negative_prompt,
-            key="image_negative_prompt_area"
-        )
-        
-        # --- Generate Button (NEW, highly visible placement) ---
+        # --- Generate Button (CRITICAL FIX: MOVED TO TOP) ---
         final_image_seed = None 
         
         if fal is None:
@@ -487,6 +481,20 @@ with tab_image:
         
         st.markdown("---") # Separator after the button
 
+        # --- Prompts ---
+        st.session_state.prompt = st.text_area(
+            "Enter your **image prompt**",
+            value=st.session_state.prompt,
+            height=150,
+            key="image_prompt_area"
+        )
+        
+        st.session_state.negative_prompt = st.text_area(
+            "Negative Prompt",
+            value=st.session_state.negative_prompt,
+            key="image_negative_prompt_area"
+        )
+        
         # --- Advanced Settings Expander ---
         with st.expander("⚙️ Advanced Settings"):
             st.markdown("Customize how the model generates your image.")
@@ -518,7 +526,7 @@ with tab_image:
             if 0 <= st.session_state.remove_index < len(st.session_state.image_result_urls):
                 st.session_state.image_result_urls.pop(st.session_state.remove_index)
             st.session_state.remove_index = None 
-            st.experimental_rerun() 
+            st.rerun() # Use rerun instead of experimental_rerun
 
         # --- Gallery Display ---
         if st.session_state.image_result_urls:
@@ -561,13 +569,14 @@ with tab_video:
         st.markdown("## 🔐 Video Generation Access")
         st.warning("Video Generation is currently restricted. Please enter the password to access.")
         
-        password_attempt = st.text_input("Enter Password", type="password", key="video_password_input")
-        if st.button("Unlock Video Generator", key="video_unlock_button"):
-            if password_attempt:
-                authenticate_video_tab(password_attempt)
-            else:
-                st.error("Please enter a password.")
+        st.text_input("Enter Password", type="password", key="video_password_input")
+        st.button("Unlock Video Generator", key="video_unlock_button", on_click=check_video_password_callback)
         
+        if st.session_state.password_error:
+            st.error(st.session_state.password_error)
+            # Clear error after displaying it once
+            st.session_state.password_error = None
+
     else:
         st.success("Access Granted! Generating videos with Wan-I2V.")
         
@@ -582,21 +591,7 @@ with tab_video:
                 "Initial image for **Image-to-Video** Generation (Optional)"
             )
 
-            # --- Prompts ---
-            st.session_state.video_prompt = st.text_area(
-                "Enter your **video prompt**",
-                value=st.session_state.video_prompt,
-                height=150,
-                key="video_prompt_area"
-            )
-            
-            st.session_state.negative_prompt = st.text_area(
-                "Negative Prompt",
-                value=st.session_state.negative_prompt,
-                key="video_negative_prompt_area"
-            )
-            
-            # --- Generate Button (Adjusted Placement) ---
+            # --- Generate Button (CRITICAL FIX: MOVED TO TOP) ---
             final_video_seed = None 
             
             if fal is None:
@@ -614,6 +609,21 @@ with tab_video:
                         st.toast("Please enter a prompt to generate a video.") 
             
             st.markdown("---")
+
+            # --- Prompts ---
+            st.session_state.video_prompt = st.text_area(
+                "Enter your **video prompt**",
+                value=st.session_state.video_prompt,
+                height=150,
+                key="video_prompt_area"
+            )
+            
+            st.session_state.negative_prompt = st.text_area(
+                "Negative Prompt",
+                value=st.session_state.negative_prompt,
+                key="video_negative_prompt_area"
+            )
+            
             
             # --- Advanced Settings Expander ---
             with st.expander("⚙️ Video Advanced Settings"):
