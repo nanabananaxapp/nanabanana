@@ -462,13 +462,11 @@ with tab_image:
             key="image_negative_prompt_area"
         )
         
-        st.markdown("---")
-        
-        # --- Generate Button (Max Visibility) ---
+        # --- Generate Button (NEW, highly visible placement) ---
         final_image_seed = None 
         
         if fal is None:
-            st.warning("Please resolve the FATAL ERROR above before generating.")
+            st.warning("Cannot connect to AI service. Please check configuration.")
         else:
             if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
                 if st.session_state.prompt:
@@ -486,6 +484,30 @@ with tab_image:
                     )
                 else:
                     st.toast("Please enter a prompt to generate an image.") 
+        
+        st.markdown("---") # Separator after the button
+
+        # --- Advanced Settings Expander ---
+        with st.expander("⚙️ Advanced Settings"):
+            st.markdown("Customize how the model generates your image.")
+            
+            resolution_options = {
+                "512x512": (512, 512),
+                "768x768": (768, 768),
+                "1024x1024": (1024, 1024),
+                "2048x2048 (2K)": (2048, 2048),
+            }
+            current_res_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
+            
+            selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=list(resolution_options.keys()).index(current_res_key))
+            st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
+
+            st.session_state.strength = st.slider("Strength (Image-to-Image only)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01)
+            st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1)
+            st.session_state.num_images = st.slider("Number of Images to Generate", min_value=1, max_value=4, value=st.session_state.num_images)
+            st.session_state.num_inference_steps = st.slider("Inference Steps (Quality/Speed)", min_value=10, max_value=100, value=st.session_state.num_inference_steps, step=5)
+            st.session_state.enable_safety_checker = st.checkbox("Enable Safety Filter", value=st.session_state.enable_safety_checker)
+            
 
     # --- Output Gallery (Right Column) ---
     with col_output_img:
@@ -528,30 +550,8 @@ with tab_image:
                     st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.info("Your generated images will appear here as small thumbnails (3 in a row).")
-            
-    # --- Advanced Settings Expander ---
-    with col_input_img:
-        with st.expander("⚙️ Advanced Settings"):
-            st.markdown("Customize how the model generates your image.")
-            
-            resolution_options = {
-                "512x512": (512, 512),
-                "768x768": (768, 768),
-                "1024x1024": (1024, 1024),
-                "2048x2048 (2K)": (2048, 2048),
-            }
-            current_res_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
-            
-            selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=list(resolution_options.keys()).index(current_res_key))
-            st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
-            st.session_state.strength = st.slider("Strength (Image-to-Image only)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01)
-            st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1)
-            st.session_state.num_images = st.slider("Number of Images to Generate", min_value=1, max_value=4, value=st.session_state.num_images)
-            st.session_state.num_inference_steps = st.slider("Inference Steps (Quality/Speed)", min_value=10, max_value=100, value=st.session_state.num_inference_steps, step=5)
-            st.session_state.enable_safety_checker = st.checkbox("Enable Safety Filter", value=st.session_state.enable_safety_checker)
             
-
 # --------------------------------------------------
 # 🎥 VIDEO GENERATION TAB (Second Tab)
 # --------------------------------------------------
@@ -596,13 +596,11 @@ with tab_video:
                 key="video_negative_prompt_area"
             )
             
-            st.markdown("---")
-            
-            # --- Generate Button ---
+            # --- Generate Button (Adjusted Placement) ---
             final_video_seed = None 
             
             if fal is None:
-                st.warning("Please resolve the FATAL ERROR above before generating.")
+                st.warning("Cannot connect to AI service. Please check configuration.")
             else:
                 if st.button("🎬 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
                     if st.session_state.video_prompt:
@@ -614,7 +612,9 @@ with tab_video:
                         )
                     else:
                         st.toast("Please enter a prompt to generate a video.") 
-
+            
+            st.markdown("---")
+            
             # --- Advanced Settings Expander ---
             with st.expander("⚙️ Video Advanced Settings"):
                 st.markdown("Customize Wan-I2V generation.")
