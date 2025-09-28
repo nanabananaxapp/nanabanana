@@ -4,13 +4,51 @@ import os
 import tempfile
 import json
 import datetime
-import time # Used for mock generation delay
+import time
+import base64
+from io import BytesIO
+import requests
+import boto3
+from botocore.exceptions import ClientError
+from PIL import Image
 
 # Define Constants
 VIDEO_PASSWORD = "f6676kwp"
 
-# Comprehensive Negative Prompt (as requested)
+# Comprehensive Negative Prompt
 DEFAULT_NEGATIVE_PROMPT = "bright colors, overexposed, static, blurred details, subtitles, style, artwork, painting, picture, still, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, malformed limbs, fused fingers, still picture, cluttered background, three legs, many people in the background, walking backwards"
+
+# FAL Models
+SDXL_MODEL = "fal-ai/stable-diffusion-xl-lightning"
+WANI2V_MODEL = "fal-ai/wan-i2v"
+
+# --- R2/S3 Configuration and Client Initialization (for saving generated files) ---
+# This code assumes R2/S3 environment variables are configured. If they are not,
+# the generated files will link directly to the fal.ai URLs.
+try:
+    R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
+    R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
+    R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
+    R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME')
+    
+    # Check if all necessary R2 variables are set
+    if all([R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME]):
+        r2_client = boto3.client(
+            's3',
+            endpoint_url=R2_ENDPOINT_URL,
+            aws_access_key_id=R2_ACCESS_KEY_ID,
+            aws_secret_access_key=R2_SECRET_ACCESS_KEY
+        )
+        STAGING_ENABLED = True
+    else:
+        r2_client = None
+        STAGING_ENABLED = False
+except Exception:
+    r2_client = None
+    STAGING_ENABLED = False
+
+# Initialize FAL Client
+fal = fal_client.client()
 
 
 # --- App Configuration and Styling ---
@@ -23,7 +61,7 @@ st.set_page_config(
 # Custom CSS for the precise dark, professional look
 st.markdown("""
 <style>
-    /* Hide Streamlit UI elements */
+    /* Hide Streamlit UI elements (including headers and toolbars) */
     [data-testid="stToolbar"] {
         visibility: hidden;
         height: 0%;
@@ -32,6 +70,10 @@ st.markdown("""
     #MainMenu, #GithubIcon, header {
       visibility: hidden;
       height: 0%;
+    }
+    /* Hiding all Streamlit alert boxes/notices as requested (Success, Info, Warning, Error) */
+    .stAlert, [data-testid="stNotification"], [data-testid="stSuccess"], [data-testid="stInfo"], [data-testid="stWarning"], [data-testid="stError"] {
+        display: none !important;
     }
 
     /* Color Palette Variables - NANO BANANA X AI Theme */
@@ -110,69 +152,311 @@ st.markdown("""
         background-color: var(--card-background);
         border-radius: 10px;
     }
-    
+
+    /* Custom styles for image thumbnail and removal button */
+    .uploaded-thumbnail-container {
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background-color: var(--card-background);
+        margin-top: 10px;
+    }
+    .uploaded-thumbnail-image {
+        width: 48px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 4px;
+        margin-right: 15px;
+    }
+    .remove-button {
+        background-color: #ff4d4d;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        margin-left: auto;
+    }
+    .remove-button:hover {
+        background-color: #cc0000;
+    }
+    .remove-button p {
+        margin: 0;
+        padding: 0;
+        line-height: 1;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
-# --- Session State Initialization (Updated for Wan-I2V defaults and Random Seed) ---
+# --- Session State Initialization ---
 
 # --- GENERAL DEFAULTS ---
 if 'negative_prompt' not in st.session_state: st.session_state.negative_prompt = DEFAULT_NEGATIVE_PROMPT
-if 'seed' not in st.session_state: st.session_state.seed = None # Always Random (no value)
+if 'seed' not in st.session_state: st.session_state.seed = None 
 if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
 
-# --- IMAGE DEFAULTS (Seedream/SDXL) ---
+# --- IMAGE UPLOADS (Stores BytesIO object) ---
+if 'image_upload_img_data' not in st.session_state: st.session_state.image_upload_img_data = None
+if 'video_upload_img_data' not in st.session_state: st.session_state.video_upload_img_data = None
+
+# --- IMAGE DEFAULTS (SDXL) ---
 if 'prompt' not in st.session_state: st.session_state.prompt = "A hyper-realistic portrait of a golden retriever wearing a banana helmet, 8k cinematic lighting"
 if 'image_result_urls' not in st.session_state: st.session_state.image_result_urls = []
 if 'width' not in st.session_state: st.session_state.width = 1024
 if 'height' not in st.session_state: st.session_state.height = 1024
-if 'strength' not in st.session_state: st.session_state.strength = 0.95 # Retained: 0.95
-if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5 # Retained: 4.5
+if 'strength' not in st.session_state: st.session_state.strength = 0.95 
+if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5 
 if 'num_images' not in st.session_state: st.session_state.num_images = 1
 if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 50 
 if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False 
 
-# --- VIDEO DEFAULTS (Wan-I2V / SVD-like - Matched to fal.ai site defaults) ---
+# --- VIDEO DEFAULTS (Wan-I2V) ---
 if 'video_prompt' not in st.session_state: st.session_state.video_prompt = "A majestic banana riding a futuristic, glowing skateboard in space, cinematic."
 if 'video_result_url' not in st.session_state: st.session_state.video_result_url = None
-if 'video_width' not in st.session_state: st.session_state.video_width = 832 # Wan-I2V Default
-if 'video_height' not in st.session_state: st.session_state.video_height = 480 # Wan-I2V Default
-if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.7 # Wan-I2V Default
-if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127 # Wan-I2V Default
-if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02 # Wan-I2V Default
-if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 40 # Wan-I2V Default
-if 'video_fps' not in st.session_state: st.session_state.video_fps = 16 # Wan-I2V Default (Updated to 16)
-if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 81 # Wan-I2V Default (Updated to 81)
-if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 # Wan-I2V Default (0.7 is common for video strength)
+if 'video_width' not in st.session_state: st.session_state.video_width = 832 
+if 'video_height' not in st.session_state: st.session_state.video_height = 480 
+if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.7 
+if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127 
+if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02 
+if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 50 
+if 'video_fps' not in st.session_state: st.session_state.video_fps = 16 
+if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 81 
+if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 
 if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False 
-if 'video_seed' not in st.session_state: st.session_state.video_seed = None # Always Random (no value)
+if 'video_seed' not in st.session_state: st.session_state.video_seed = None 
+
+# --- Helper Functions ---
+
+def upload_file_to_r2(content_url, file_extension):
+    """
+    Downloads content from a URL and uploads it to R2/S3, returning the public URL.
+    Returns the original content_url if R2/S3 staging is disabled or fails.
+    """
+    if not STAGING_ENABLED:
+        return content_url
+
+    try:
+        response = requests.get(content_url)
+        response.raise_for_status() # Check for bad status codes
+        
+        # Determine file name and MIME type
+        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        file_key = f"fal_assets/{timestamp}_{os.urandom(4).hex()}{file_extension}"
+        content_type = response.headers.get('Content-Type') or (
+            'video/mp4' if file_extension == '.mp4' else 'image/jpeg'
+        )
+
+        r2_client.put_object(
+            Bucket=R2_BUCKET_NAME,
+            Key=file_key,
+            Body=response.content,
+            ContentType=content_type
+        )
+
+        # Construct public URL (assumes public access bucket policy)
+        public_url = f"{R2_ENDPOINT_URL}/{R2_BUCKET_NAME}/{file_key}"
+        return public_url
+
+    except Exception as e:
+        # Note: Error bar removed per user request. Errors are now logged to console.
+        print(f"R2 Upload Failed: {e}") 
+        return content_url
+
+def image_to_base64(uploaded_file_data):
+    """Converts BytesIO file data to a base64 string for thumbnail display."""
+    if uploaded_file_data:
+        try:
+            # Re-read the BytesIO object from the start
+            uploaded_file_data.seek(0)
+            img = Image.open(uploaded_file_data)
+            img.thumbnail((128, 128)) # Resize for thumbnail
+            
+            buffered = BytesIO()
+            # Save as JPEG to standardize output (smaller size)
+            img.save(buffered, format="JPEG")
+            
+            # Reset BytesIO position after saving
+            uploaded_file_data.seek(0) 
+            
+            return base64.b64encode(buffered.getvalue()).decode()
+        except Exception:
+            # Reset BytesIO position after failure
+            uploaded_file_data.seek(0)
+            return None
+    return None
+
+def display_image_uploader_with_thumbnail(session_state_key, label_text):
+    """Handles the UI for image upload, thumbnail display, and removal."""
+    
+    # 1. Image Uploader
+    uploaded_file = st.file_uploader(
+        label_text,
+        type=["png", "jpg", "jpeg"],
+        key=f"uploader_{session_state_key}"
+    )
+
+    # If a new file is uploaded, update the session state with BytesIO data
+    if uploaded_file is not None and getattr(st.session_state, session_state_key) is None:
+        file_data = BytesIO(uploaded_file.getvalue())
+        setattr(st.session_state, session_state_key, file_data)
+    
+    # 2. Thumbnail Display and Removal
+    current_file_data = getattr(st.session_state, session_state_key)
+    input_image_url = None
+    
+    if current_file_data is not None:
+        
+        b64_img = image_to_base64(current_file_data)
+        
+        if b64_img:
+            # Use base64 URL for FAL client
+            input_image_url = f"data:image/jpeg;base64,{base64.b64encode(current_file_data.getvalue()).decode()}"
+
+            st.markdown(f"""
+                <div class="uploaded-thumbnail-container">
+                    <img src="data:image/jpeg;base64,{b64_img}" class="uploaded-thumbnail-image" alt="Uploaded Image Thumbnail"/>
+                    <span style="color: var(--text-color); font-size: 0.9rem; margin-right: auto;">Image Ready for Generation.</span>
+                    <button class="remove-button" onclick="
+                        // Use JavaScript to reset the session state key and trigger a rerun
+                        const key = '{session_state_key}';
+                        window.parent.postMessage({{
+                            'type': 'set_session_state',
+                            'key': key,
+                            'value': null
+                        }}, '*');
+                        window.parent.postMessage({{
+                            'type': 'rerun'
+                        }}, '*');
+                    "><p>X</p></button>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Ensure the BytesIO object is at the beginning for the generator call
+            current_file_data.seek(0)
+            
+    return input_image_url
+
+# --- FAL Generation Functions (Restored with actual logic) ---
+
+def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
+    """Generates images using fal-ai/stable-diffusion-xl-lightning and stages results."""
+    st.toast("Submitting Image Generation Request...")
+    
+    if input_image_url:
+        # Image-to-Image mode
+        model = "fal-ai/stable-diffusion-xl-lightning-sdedit"
+        params = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "width": width,
+            "height": height,
+            "num_images": num_images,
+            "image_url": input_image_url,
+            "strength": strength,
+            "guidance_scale": guidance_scale,
+            "num_inference_steps": num_steps,
+            "seed": seed, # None for random
+            "enable_safety_checker": st.session_state.enable_safety_checker
+        }
+    else:
+        # Text-to-Image mode
+        model = SDXL_MODEL
+        params = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "width": width,
+            "height": height,
+            "num_images": num_images,
+            "guidance_scale": guidance_scale,
+            "num_inference_steps": num_steps,
+            "seed": seed, # None for random
+            "enable_safety_checker": st.session_state.enable_safety_checker
+        }
+    
+    try:
+        handler = fal.submit(model, arguments=params)
+        
+        # Streamlit poll loop
+        with st.spinner("Processing... waiting for the model to finish."):
+            result = handler.get_response(stream=True)
+            
+        final_urls = []
+        
+        # Stage results to R2 if enabled
+        for i, image_data in enumerate(result['images']):
+            fal_url = image_data['url']
+            staged_url = upload_file_to_r2(fal_url, ".jpg")
+            final_urls.append(staged_url)
+        
+        st.toast(f"Generated {len(final_urls)} image(s) successfully!")
+        return final_urls
+
+    except Exception as e:
+        # Use st.exception for robust error display without a notice bar
+        st.error("Image Generation Failed. Check the console for details.")
+        print(f"Image Generation Failed: {e}")
+        return []
+
+
+def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
+    """Generates video using fal-ai/wan-i2v and stages result."""
+    st.toast("Submitting Video Generation Request...")
+    
+    params = {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "width": st.session_state.video_width,
+        "height": st.session_state.video_height,
+        "num_frames": st.session_state.video_num_frames,
+        "fps": st.session_state.video_fps,
+        "num_inference_steps": st.session_state.video_num_inference_steps,
+        "strength": st.session_state.video_strength,
+        "motion_bucket_id": st.session_state.motion_bucket_id,
+        "cond_aug": st.session_state.cond_aug,
+        "lora_weight": st.session_state.video_lora_weight,
+        "seed": seed, # None for random
+        "enable_safety_checker": st.session_state.video_safety_checker,
+        "image_url": input_image_url # Used for I2V, None for T2V
+    }
+    
+    try:
+        handler = fal.submit(WANI2V_MODEL, arguments=params)
+        
+        # Streamlit poll loop
+        with st.spinner("Processing... This can take a few minutes."):
+            result = handler.get_response(stream=True)
+            
+        fal_url = result['video']['url']
+        
+        # Stage result to R2 if enabled
+        staged_url = upload_file_to_r2(fal_url, ".mp4")
+        
+        st.toast("Video generation complete!")
+        return staged_url
+
+    except Exception as e:
+        # Use st.exception for robust error display without a notice bar
+        st.error("Video Generation Failed. Check the console for details.")
+        print(f"Video Generation Failed: {e}")
+        return None
 
 # --- Authentication Logic ---
 def authenticate_video_tab(password_attempt):
     """Checks the password and updates session state."""
     if password_attempt == VIDEO_PASSWORD:
         st.session_state.video_authenticated = True
-        st.success("✅ Access Granted!")
-    else:
-        st.session_state.video_authenticated = False
-        st.error("❌ Incorrect Password.")
-
-# --- Mock Generation Functions (Kept for UI demonstration) ---
-def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
-    """MOCK function to simulate image generation. Seed will be None."""
-    # Placeholder for the generated image URLs (single golden retriever image placeholder)
-    mock_url = f"https://placehold.co/{width}x{height}/4169E1/FFD700?text=NANO+BANANA+X+AI+{width}x{height}"
-    return [mock_url] * num_images
-
-
-def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
-    """MOCK function to simulate video generation with delay. Seed will be None."""
-    time.sleep(3) # Simulate processing time
-    if input_image_url:
-        st.toast(f"Starting Video-from-Image generation with prompt: {prompt}")
-    # Public domain video for preview
-    return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        st.balloons()
+        st.experimental_rerun()
+    # Note: st.error is kept here as it's the only way to communicate a failed login attempt.
 
 
 # --- Main Application Layout ---
@@ -190,24 +474,17 @@ st.markdown("---")
 # --------------------------------------------------
 with tab_image:
     
-    # Use columns for Controls (Input) and Preview (Output)
     col_input_img, col_output_img = st.columns([1, 2])
 
     with col_input_img:
         st.markdown("## Image Input Controls")
         
-        # --- Image Upload Section ---
-        uploaded_file = st.file_uploader(
-            "Upload an **initial image** for Image-to-Image Generation (Optional)",
-            type=["png", "jpg", "jpeg"],
-            key="image_upload_img"
+        # --- Image Upload Section (Using custom component) ---
+        input_image_url = display_image_uploader_with_thumbnail(
+            'image_upload_img_data',
+            "Upload an **initial image** for Image-to-Image Generation (Optional)"
         )
         
-        input_image_url = None
-        if uploaded_file is not None:
-             st.success("Image uploaded. Using Image-to-Image mode.")
-             input_image_url = "mock-uploaded-image-url"
-
         # --- Prompts ---
         st.session_state.prompt = st.text_area(
             "Enter your **image prompt**",
@@ -225,28 +502,25 @@ with tab_image:
         st.markdown("---")
         
         # --- Generate Button ---
-        # The actual seed passed is always None (random) as requested
-        final_image_seed = None 
+        final_image_seed = None # Always Random
         
         if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
             if st.session_state.prompt:
-                with st.spinner('Generating image(s)...'):
-                    st.session_state.image_result_urls = fal_generate_image(
-                        st.session_state.prompt, 
-                        st.session_state.negative_prompt, 
-                        st.session_state.width, 
-                        st.session_state.height, 
-                        st.session_state.num_images, 
-                        st.session_state.strength, 
-                        st.session_state.guidance_scale, 
-                        st.session_state.num_inference_steps, 
-                        final_image_seed, # Always None
-                        input_image_url
-                    )
-                    if st.session_state.image_result_urls:
-                        st.toast(f"Generated {len(st.session_state.image_result_urls)} image(s)!")
+                st.session_state.image_result_urls = fal_generate_image(
+                    st.session_state.prompt, 
+                    st.session_state.negative_prompt, 
+                    st.session_state.width, 
+                    st.session_state.height, 
+                    st.session_state.num_images, 
+                    st.session_state.strength, 
+                    st.session_state.guidance_scale, 
+                    st.session_state.num_inference_steps, 
+                    final_image_seed, 
+                    input_image_url
+                )
             else:
-                st.error("Please enter a prompt to generate an image.")
+                # Use a specific message if no prompt is entered
+                st.toast("Please enter a prompt to generate an image.") 
 
         st.markdown("---")
 
@@ -271,7 +545,6 @@ with tab_image:
             st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=4, value=st.session_state.num_images, step=1, key="img_num_images")
             st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1, key="img_steps")
             
-            # Seed input displayed for UI completeness, but the generation logic forces None (random)
             st.number_input("Seed (Policy: Always Random)", min_value=0, max_value=0, value=0, step=1, disabled=True, key="img_seed_input_display")
             
             st.session_state.enable_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.enable_safety_checker, key="img_safety_check")
@@ -283,13 +556,22 @@ with tab_image:
             cols = st.columns(num_cols)
             for i, image_url in enumerate(st.session_state.image_result_urls):
                 with cols[i % num_cols]:
-                    st.image(image_url, caption=f"Result {i+1}", use_column_width="always")
-                    # Mock download button
+                    st.image(image_url, caption=f"Result {i+1}", use_container_width=True) 
+                    
+                    # R2 Download button or link to original FAL URL
+                    download_label = "Download (Staged)" if STAGING_ENABLED else "Download (FAL URL)"
+                    
+                    # Download the content to serve the file directly to the user
+                    try:
+                        image_content = requests.get(image_url).content
+                    except Exception:
+                        image_content = b"Error fetching image content."
+                        
                     st.download_button(
-                        label="Download",
-                        data="Mock image data",
-                        file_name=f"fal-image_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.png",
-                        mime="image/png",
+                        label=download_label,
+                        data=image_content,
+                        file_name=f"nano_banana_img_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.jpg",
+                        mime="image/jpeg",
                         use_container_width=True
                     )
         else:
@@ -330,19 +612,11 @@ with tab_video:
         with col_input:
             st.markdown("## Video Input Controls")
             
-            # --- Image Upload Section for Video Source ---
-            video_uploaded_file = st.file_uploader(
-                "Upload **source image** for Image-to-Video Generation (Optional)",
-                type=["png", "jpg", "jpeg"],
-                key="video_upload_img"
+            # --- Image Upload Section for Video Source (Using custom component) ---
+            input_video_image_url = display_image_uploader_with_thumbnail(
+                'video_upload_img_data',
+                "Upload **source image** for Image-to-Video Generation (Optional)"
             )
-            
-            input_video_image_url = None
-            if video_uploaded_file is not None:
-                 st.success("Image uploaded. Ready for Video Generation.")
-                 input_video_image_url = "mock-uploaded-image-url-for-video"
-            else:
-                 st.info("Upload an image to guide the starting frame and style of the video.")
 
             # --- Prompts ---
             st.session_state.video_prompt = st.text_area(
@@ -360,23 +634,19 @@ with tab_video:
             
             st.markdown("---")
             
-            # The actual seed passed is always None (random) as requested
-            final_video_seed = None 
+            final_video_seed = None # Always Random
             
             # --- Generate Button ---
             if st.button("🚀 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
                 if st.session_state.video_prompt:
-                    with st.spinner('Generating video... this can take a few minutes.'):
-                        video_url = fal_generate_video(
-                            st.session_state.video_prompt, 
-                            st.session_state.negative_prompt,
-                            input_video_image_url,
-                            final_video_seed # Always None
-                        )
-                        st.session_state.video_result_url = video_url
-                        st.toast("Video generation complete!")
+                    st.session_state.video_result_url = fal_generate_video(
+                        st.session_state.video_prompt, 
+                        st.session_state.negative_prompt,
+                        input_video_image_url,
+                        final_video_seed # Always None
+                    )
                 else:
-                    st.error("Please enter a prompt to generate a video.")
+                    st.toast("Please enter a prompt to generate a video.")
             
             st.markdown("---")
             
@@ -390,6 +660,7 @@ with tab_video:
                     "1024x576 (576P)": (1024, 576),
                     "1280x720 (720P)": (1280, 720),
                 }
+                # Default to 832x480 (index 0)
                 selected_video_resolution = st.selectbox("Resolution", list(video_resolution_options.keys()), index=0, key="vid_resolution_select")
                 st.session_state.video_width, st.session_state.video_height = video_resolution_options[selected_video_resolution]
 
@@ -399,12 +670,11 @@ with tab_video:
                 st.session_state.cond_aug = st.slider("Conditioning Augmentation", min_value=0.0, max_value=0.1, value=st.session_state.cond_aug, step=0.01, format="%.2f", key="vid_cond_aug_slider")
                 st.session_state.video_lora_weight = st.slider("LoRA Weight (Style adaptation)", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01, key="vid_lora_weight_slider")
                 
-                # Time/Quality Parameters (UPDATED)
-                st.session_state.video_num_frames = st.slider("Number of Frames", min_value=16, max_value=100, value=st.session_state.video_num_frames, step=1, key="vid_num_frames_slider")
+                # Time/Quality Parameters
+                st.session_state.video_num_frames = st.slider("Number of Frames (Max 100)", min_value=16, max_value=100, value=st.session_state.video_num_frames, step=1, key="vid_num_frames_slider")
                 st.session_state.video_fps = st.slider("FPS (Frames per Second)", min_value=1, max_value=24, value=st.session_state.video_fps, step=1, key="vid_fps_slider")
                 st.session_state.video_num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=1, key="vid_steps_slider")
 
-                # Seed input displayed for UI completeness, but the generation logic forces None (random)
                 st.number_input("Seed (Policy: Always Random)", min_value=0, max_value=0, value=0, step=1, disabled=True, key="vid_seed_input_display")
                 
                 st.session_state.video_safety_checker = st.checkbox("Enable Safety Checker", value=st.session_state.video_safety_checker, key="vid_safety_check")
@@ -412,13 +682,22 @@ with tab_video:
         with col_output:
             st.markdown("## Video Output Preview")
             if st.session_state.video_result_url:
-                st.video(st.session_state.video_result_url)
+                st.video(st.session_state.video_result_url, format="video/mp4", start_time=0, loop=True, autoplay=True, use_container_width=True)
                 st.markdown(f'<p style="text-align:center; color: var(--text-color); font-size: 0.9rem;">Generated on: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>', unsafe_allow_html=True)
-                # Mock download button
+                
+                # R2 Download button or link to original FAL URL
+                download_label = "Download Video (Staged)" if STAGING_ENABLED else "Download Video (FAL URL)"
+                
+                # Download the content to serve the file directly to the user
+                try:
+                    video_content = requests.get(st.session_state.video_result_url).content
+                except Exception:
+                    video_content = b"Error fetching video content."
+
                 st.download_button(
-                    label="Download Video (MP4)",
-                    data="Mock video data",
-                    file_name=f"fal-video_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.mp4",
+                    label=download_label,
+                    data=video_content,
+                    file_name=f"nano_banana_video_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.mp4",
                     mime="video/mp4",
                     use_container_width=True
                 )
@@ -456,4 +735,3 @@ with tab_video:
             
             if submitted:
                 authenticate_video_tab(password_input)
-
