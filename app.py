@@ -141,7 +141,7 @@ if 'video_height' not in st.session_state: st.session_state.video_height = 480 #
 if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.7 # Wan-I2V Default
 if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127 # Wan-I2V Default
 if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02 # Wan-I2V Default
-if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 50 # Wan-I2V Default
+if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 40 # Wan-I2V Default
 if 'video_fps' not in st.session_state: st.session_state.video_fps = 16 # Wan-I2V Default (Updated to 16)
 if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 81 # Wan-I2V Default (Updated to 81)
 if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 # Wan-I2V Default (0.7 is common for video strength)
@@ -456,3 +456,4 @@ with tab_video:
             
             if submitted:
                 authenticate_video_tab(password_input)
+
