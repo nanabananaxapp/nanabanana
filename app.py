@@ -22,35 +22,6 @@ DEFAULT_NEGATIVE_PROMPT = "bright colors, overexposed, static, blurred details, 
 SDXL_MODEL = "fal-ai/stable-diffusion-xl-lightning"
 WANI2V_MODEL = "fal-ai/wan-i2v"
 
-# --- R2/S3 Configuration and Client Initialization (for saving generated files) ---
-# This code assumes R2/S3 environment variables are configured. If they are not,
-# the generated files will link directly to the fal.ai URLs.
-try:
-    R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
-    R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
-    R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
-    R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME')
-    
-    # Check if all necessary R2 variables are set
-    if all([R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME]):
-        r2_client = boto3.client(
-            's3',
-            endpoint_url=R2_ENDPOINT_URL,
-            aws_access_key_id=R2_ACCESS_KEY_ID,
-            aws_secret_access_key=R2_SECRET_ACCESS_KEY
-        )
-        STAGING_ENABLED = True
-    else:
-        r2_client = None
-        STAGING_ENABLED = False
-except Exception:
-    r2_client = None
-    STAGING_ENABLED = False
-
-# Initialize FAL Client
-fal = fal_client.client()
-
-
 # --- App Configuration and Styling ---
 st.set_page_config(
     page_title="NANO BANANA X AI",
@@ -196,6 +167,45 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- R2/S3 Configuration and Client Initialization (for saving generated files) ---
+# NOTE: R2 configuration still relies on environment variables (os.environ.get)
+try:
+    R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
+    R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
+    R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
+    R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME')
+    
+    # Check if all necessary R2 variables are set
+    if all([R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME]):
+        r2_client = boto3.client(
+            's3',
+            endpoint_url=R2_ENDPOINT_URL,
+            aws_access_key_id=R2_ACCESS_KEY_ID,
+            aws_secret_access_key=R2_SECRET_ACCESS_KEY
+        )
+        STAGING_ENABLED = True
+    else:
+        r2_client = None
+        STAGING_ENABLED = False
+except Exception:
+    r2_client = None
+    STAGING_ENABLED = False
+
+# Initialize FAL Client (FIX FOR TYPE ERROR)
+try:
+    # Explicitly load FAL credentials from Streamlit secrets
+    FAL_KEY = st.secrets["FAL_KEY"]
+    FAL_SECRET = st.secrets["FAL_SECRET"]
+    
+    # Initialize the client with explicit key/secret
+    fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
+except KeyError:
+    st.error("FATAL ERROR: FAL_KEY or FAL_SECRET is missing from Streamlit secrets. Please configure them.")
+    fal = None
+except Exception as e:
+    st.error(f"FATAL ERROR: Could not initialize the FAL AI Client. Details: {e}")
+    fal = None
+
 
 # --- Session State Initialization ---
 
@@ -267,7 +277,7 @@ def upload_file_to_r2(content_url, file_extension):
         return public_url
 
     except Exception as e:
-        # Note: Error bar removed per user request. Errors are now logged to console.
+        # Errors are logged to console.
         print(f"R2 Upload Failed: {e}") 
         return content_url
 
@@ -318,7 +328,8 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
         b64_img = image_to_base64(current_file_data)
         
         if b64_img:
-            # Use base64 URL for FAL client
+            # Get base64 URL for FAL client by re-reading the data
+            current_file_data.seek(0)
             input_image_url = f"data:image/jpeg;base64,{base64.b64encode(current_file_data.getvalue()).decode()}"
 
             st.markdown(f"""
@@ -327,10 +338,10 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
                     <span style="color: var(--text-color); font-size: 0.9rem; margin-right: auto;">Image Ready for Generation.</span>
                     <button class="remove-button" onclick="
                         // Use JavaScript to reset the session state key and trigger a rerun
-                        const key = '{session_state_key}';
+                        // This relies on Streamlit's ability to communicate state changes via JS
                         window.parent.postMessage({{
                             'type': 'set_session_state',
-                            'key': key,
+                            'key': '{session_state_key}',
                             'value': null
                         }}, '*');
                         window.parent.postMessage({{
@@ -349,6 +360,11 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
 
 def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
     """Generates images using fal-ai/stable-diffusion-xl-lightning and stages results."""
+    
+    if fal is None:
+        st.error("Cannot generate image: FAL service is not initialized.")
+        return []
+
     st.toast("Submitting Image Generation Request...")
     
     if input_image_url:
@@ -409,6 +425,11 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
 
 def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
     """Generates video using fal-ai/wan-i2v and stages result."""
+    
+    if fal is None:
+        st.error("Cannot generate video: FAL service is not initialized.")
+        return None
+        
     st.toast("Submitting Video Generation Request...")
     
     params = {
@@ -504,23 +525,27 @@ with tab_image:
         # --- Generate Button ---
         final_image_seed = None # Always Random
         
-        if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
-            if st.session_state.prompt:
-                st.session_state.image_result_urls = fal_generate_image(
-                    st.session_state.prompt, 
-                    st.session_state.negative_prompt, 
-                    st.session_state.width, 
-                    st.session_state.height, 
-                    st.session_state.num_images, 
-                    st.session_state.strength, 
-                    st.session_state.guidance_scale, 
-                    st.session_state.num_inference_steps, 
-                    final_image_seed, 
-                    input_image_url
-                )
-            else:
-                # Use a specific message if no prompt is entered
-                st.toast("Please enter a prompt to generate an image.") 
+        # Check if FAL is initialized before allowing generation
+        if fal is None:
+            st.warning("Please resolve the FATAL ERROR above before generating.")
+        else:
+            if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
+                if st.session_state.prompt:
+                    st.session_state.image_result_urls = fal_generate_image(
+                        st.session_state.prompt, 
+                        st.session_state.negative_prompt, 
+                        st.session_state.width, 
+                        st.session_state.height, 
+                        st.session_state.num_images, 
+                        st.session_state.strength, 
+                        st.session_state.guidance_scale, 
+                        st.session_state.num_inference_steps, 
+                        final_image_seed, 
+                        input_image_url
+                    )
+                else:
+                    # Use a specific message if no prompt is entered
+                    st.toast("Please enter a prompt to generate an image.") 
 
         st.markdown("---")
 
@@ -637,16 +662,20 @@ with tab_video:
             final_video_seed = None # Always Random
             
             # --- Generate Button ---
-            if st.button("🚀 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
-                if st.session_state.video_prompt:
-                    st.session_state.video_result_url = fal_generate_video(
-                        st.session_state.video_prompt, 
-                        st.session_state.negative_prompt,
-                        input_video_image_url,
-                        final_video_seed # Always None
-                    )
-                else:
-                    st.toast("Please enter a prompt to generate a video.")
+            # Check if FAL is initialized before allowing generation
+            if fal is None:
+                st.warning("Please resolve the FATAL ERROR above before generating.")
+            else:
+                if st.button("🚀 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
+                    if st.session_state.video_prompt:
+                        st.session_state.video_result_url = fal_generate_video(
+                            st.session_state.video_prompt, 
+                            st.session_state.negative_prompt,
+                            input_video_image_url,
+                            final_video_seed # Always None
+                        )
+                    else:
+                        st.toast("Please enter a prompt to generate a video.")
             
             st.markdown("---")
             
