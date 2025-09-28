@@ -124,7 +124,7 @@ st.markdown("""
         border-radius: 10px;
     }
 
-    /* Custom styles for image thumbnail and removal button */
+    /* Custom styles for image upload thumbnail and removal button */
     .uploaded-thumbnail-container {
         display: flex;
         align-items: center;
@@ -141,34 +141,37 @@ st.markdown("""
         border-radius: 4px;
         margin-right: 15px;
     }
-    .remove-button {
-        background-color: #ff4d4d;
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 24px;
-        height: 24px;
+    
+    /* --- NEW STYLES FOR OUTPUT GALLERY THUMBNAILS --- */
+    .gallery-thumbnail-container {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: bold;
-        margin-left: auto;
+        background-color: var(--card-background);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 5px;
+        margin-bottom: 5px; /* Reduced margin for compact display */
     }
-    .remove-button:hover {
-        background-color: #cc0000;
+    .gallery-thumbnail-image {
+        width: 100px; /* Fixed small size */
+        height: 100px; 
+        object-fit: cover;
+        border-radius: 6px;
+        margin-bottom: 5px;
     }
-    .remove-button p {
-        margin: 0;
-        padding: 0;
-        line-height: 1;
+    
+    /* Streamlit button specific styling for the small buttons below thumbnails */
+    /* Ensure the buttons are aligned well */
+    [data-testid*="stVerticalBlock"] > [data-testid*="stHorizontalBlock"] > div > [data-testid*="stButton"] button {
+        padding: 5px 10px;
+        font-size: 0.8rem;
+        font-weight: 500;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # --- R2/S3 Configuration and Client Initialization (for saving generated files) ---
-# NOTE: R2 configuration still relies on environment variables (os.environ.get)
 try:
     R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
     R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
@@ -228,6 +231,7 @@ if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4
 if 'num_images' not in st.session_state: st.session_state.num_images = 1
 if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 50 
 if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False 
+if 'remove_index' not in st.session_state: st.session_state.remove_index = None # New state for image removal
 
 # --- VIDEO DEFAULTS (Wan-I2V) ---
 if 'video_prompt' not in st.session_state: st.session_state.video_prompt = "A majestic banana riding a futuristic, glowing skateboard in space, cinematic."
@@ -330,15 +334,20 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
         if b64_img:
             # Get base64 URL for FAL client by re-reading the data
             current_file_data.seek(0)
-            input_image_url = f"data:image/jpeg;base64,{base64.b64encode(current_file_data.getvalue()).decode()}"
+            img_bytes = current_file_data.getvalue()
+            current_file_data.seek(0) # Reset pointer
+            input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
 
+            # Use st.markdown for a custom thumbnail display with an inline X button
             st.markdown(f"""
                 <div class="uploaded-thumbnail-container">
                     <img src="data:image/jpeg;base64,{b64_img}" class="uploaded-thumbnail-image" alt="Uploaded Image Thumbnail"/>
                     <span style="color: var(--text-color); font-size: 0.9rem; margin-right: auto;">Image Ready for Generation.</span>
                     <button class="remove-button" onclick="
-                        // Use JavaScript to reset the session state key and trigger a rerun
-                        // This relies on Streamlit's ability to communicate state changes via JS
+                        // This uses a non-Streamlit way to signal state change via JS, 
+                        // which relies on the environment supporting this cross-frame communication.
+                        // However, using a Streamlit button is generally more reliable. 
+                        // We keep the JS for the visual style but still rely on Streamlit Reruns for logic flow.
                         window.parent.postMessage({{
                             'type': 'set_session_state',
                             'key': '{session_state_key}',
@@ -576,24 +585,48 @@ with tab_image:
 
     with col_output_img:
         st.markdown("## Image Output Gallery")
+        
+        # --- Image Removal Logic (Must run before display loop) ---
+        # Checks if a removal was requested in the previous run and executes it
+        if st.session_state.remove_index is not None:
+            try:
+                # Remove the item at the specified index
+                del st.session_state.image_result_urls[st.session_state.remove_index]
+                st.session_state.remove_index = None # Clear the flag
+                st.experimental_rerun()
+            except IndexError:
+                st.session_state.remove_index = None # Safety clear
+        
+        # --- Image Display Logic (Small Thumbnails) ---
         if st.session_state.image_result_urls:
-            num_cols = 2
-            cols = st.columns(num_cols)
+            
+            # Use 3 columns to display small thumbnails side-by-side
+            cols = st.columns(3) 
+            
             for i, image_url in enumerate(st.session_state.image_result_urls):
-                with cols[i % num_cols]:
-                    st.image(image_url, caption=f"Result {i+1}", use_container_width=True) 
+                with cols[i % 3]: # Cycle through the 3 columns
                     
-                    # R2 Download button or link to original FAL URL
-                    download_label = "Download (Staged)" if STAGING_ENABLED else "Download (FAL URL)"
+                    # Custom HTML for the small thumbnail container (using new CSS class)
+                    st.markdown(f"""
+                        <div class="gallery-thumbnail-container">
+                            <img src="{image_url}" class="gallery-thumbnail-image" title="Result {i+1}"/>
+                        </div>
+                    """, unsafe_allow_html=True)
                     
-                    # Download the content to serve the file directly to the user
+                    # Streamlit button for Removal (The functional 'X' requested)
+                    # We set the remove_index state variable and trigger a rerun on click
+                    if st.button("❌ Remove", key=f"remove_img_{i}", use_container_width=True):
+                        st.session_state.remove_index = i
+                        # The rerun is handled automatically by the button click
+                        
+                    # Download button
                     try:
                         image_content = requests.get(image_url).content
                     except Exception:
                         image_content = b"Error fetching image content."
                         
                     st.download_button(
-                        label=download_label,
+                        label="⬇️ Download",
                         data=image_content,
                         file_name=f"nano_banana_img_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.jpg",
                         mime="image/jpeg",
