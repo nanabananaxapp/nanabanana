@@ -264,7 +264,7 @@ def get_r2_client():
         missing_keys = [key for key in required_keys if key not in st.secrets]
         
         if missing_keys:
-            st.warning(f" ⚠️ Missing R2 configuration secrets: {', '.join(missing_keys)}. Saving generations to R2 will be skipped.")
+            # st.warning(f" ⚠️ Missing R2 configuration secrets: {', '.join(missing_keys)}. Saving generations to R2 will be skipped.")
             return None
 
         # Create S3 client configured for R2
@@ -278,14 +278,14 @@ def get_r2_client():
         
         # Test connection by listing buckets
         s3_client.list_buckets()
-        st.info("✅ Successfully connected to Cloudflare R2.")
+        # st.info("✅ Successfully connected to Cloudflare R2.")
         return s3_client
         
     except ClientError as e:
-        st.error(f"❌ R2 Authentication failed: {e}")
+        # st.error(f"❌ R2 Authentication failed: {e}")
         return None
     except Exception as e:
-        st.error(f"❌ An error occurred while connecting to R2: {e}")
+        # st.error(f"❌ An error occurred while connecting to R2: {e}")
         return None
 
 
@@ -303,7 +303,7 @@ def ensure_bucket_exists(s3_client, bucket_name):
             # Bucket doesn't exist, create it
             try:
                 s3_client.create_bucket(Bucket=bucket_name)
-                st.info(f"✅ R2 bucket '{bucket_name}' created successfully.")
+                # st.info(f"✅ R2 bucket '{bucket_name}' created successfully.")
                 return True
             except ClientError as create_error:
                 st.error(f"❌ Failed to create R2 bucket: {create_error}")
@@ -334,7 +334,7 @@ def upload_bytes_to_r2(s3_client, file_bytes, s3_key, bucket_name, content_type=
 def save_generation(s3_client, uploaded_files, generated_image_data, generation_params, folder_prefix="generation"):
     """Saves image generation data (Seedream) to R2."""
     if not s3_client or not R2_BUCKET_NAME:
-        st.warning("⚠ Skipping R2 save for image generation.")
+        # st.warning("⚠ Skipping R2 save for image generation.")
         return
     
     if not ensure_bucket_exists(s3_client, R2_BUCKET_NAME):
@@ -379,7 +379,7 @@ def save_generation(s3_client, uploaded_files, generated_image_data, generation_
             content_type='application/json'
         )
         
-        st.success(f"Image generation saved to R2 (Folder: {generation_folder})")
+        # st.success(f"Image generation saved to R2 (Folder: {generation_folder})")
         
     except Exception as e:
         st.error(f"❌ Error saving image generation to R2: {str(e)}")
@@ -388,7 +388,7 @@ def save_generation(s3_client, uploaded_files, generated_image_data, generation_
 def save_video_generation(s3_client, uploaded_files, generated_video_data, generation_params, folder_prefix="video_generation"):
     """Saves video generation data (Wan-I2V) to R2."""
     if not s3_client or not R2_BUCKET_NAME:
-        st.warning("⚠ Skipping R2 save for video generation.")
+        # st.warning("⚠ Skipping R2 save for video generation.")
         return
     
     if not ensure_bucket_exists(s3_client, R2_BUCKET_NAME):
@@ -431,7 +431,7 @@ def save_video_generation(s3_client, uploaded_files, generated_video_data, gener
             content_type='application/json'
         )
         
-        st.success(f"Video generation saved to R2 (Folder: {generation_folder})")
+        # st.success(f"Video generation saved to R2 (Folder: {generation_folder})")
         
     except Exception as e:
         st.error(f"❌ Error saving video generation to R2: {str(e)}")
@@ -462,7 +462,7 @@ def upload_files_to_fal(uploaded_files):
     st.session_state.uploaded_image_urls.update(uploaded_image_urls)
     return uploaded_image_urls
 
-# --- Session State Initialization (Seedream) ---
+# --- Session State Initialization (Seedream Defaults) ---
 if 'generated_images' not in st.session_state: st.session_state.generated_images = {}
 if 'strength' not in st.session_state: st.session_state.strength = 0.95
 if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5
@@ -476,17 +476,22 @@ if 'is_generating_clicked' not in st.session_state: st.session_state.is_generati
 if 'prompt' not in st.session_state: st.session_state.prompt = ""
 
 
-# --- Session State Initialization (Wan-I2V) ---
+# --- Session State Initialization (Wan-I2V Defaults) ---
 if 'video_generated_data' not in st.session_state: st.session_state.video_generated_data = None
 if 'video_prompt' not in st.session_state: st.session_state.video_prompt = ""
+if 'video_negative_prompt' not in st.session_state: st.session_state.video_negative_prompt = "" # NEW
 if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.95
 if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127
 if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02
-if 'video_width' not in st.session_state: st.session_state.video_width = 832  # 480P equivalent width
-if 'video_height' not in st.session_state: st.session_state.video_height = 480 # 480P equivalent height
+if 'video_width' not in st.session_state: st.session_state.video_width = 832  
+if 'video_height' not in st.session_state: st.session_state.video_height = 480 
+if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 50 # NEW Default: 50
+if 'video_fps' not in st.session_state: st.session_state.video_fps = 12 # NEW Default: 12
+if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 16 # NEW Default: 16
+if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 # NEW Default: 0.7
 if 'video_is_generating_clicked' not in st.session_state: st.session_state.video_is_generating_clicked = False
 if 'video_seed' not in st.session_state: st.session_state.video_seed = None
-if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False # NEW Authentication state
+if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
 
 # --- Common Session State ---
 if 'uploaded_file_objects' not in st.session_state: st.session_state.uploaded_file_objects = None
@@ -498,7 +503,6 @@ def authenticate_video_tab(password_attempt):
     if password_attempt == VIDEO_PASSWORD:
         st.session_state.video_authenticated = True
         st.success("✅ Access Granted!")
-        # Use rerun to immediately show the content of the tab
         st.rerun() 
     else:
         st.error("❌ Incorrect Password.")
@@ -615,18 +619,20 @@ def generate_video():
         uploaded_file_urls = upload_files_to_fal(uploaded_files)
         image_url_to_use = list(uploaded_file_urls.values())[0]
 
-        final_prompt = current_prompt
-
         arguments = {
             "image_url": image_url_to_use,
-            "prompt": final_prompt,
+            "prompt": current_prompt,
+            "negative_prompt": st.session_state.video_negative_prompt, # ADDED
             "strength": st.session_state.video_strength,
             "motion_bucket_id": st.session_state.motion_bucket_id,
             "cond_aug": st.session_state.cond_aug,
             "width": st.session_state.video_width,
             "height": st.session_state.video_height,
-            # Setting to False as requested by the user
-            "enable_safety_checker": False
+            "num_inference_steps": st.session_state.video_num_inference_steps, # ADDED
+            "fps": st.session_state.video_fps, # ADDED
+            "num_frames": st.session_state.video_num_frames, # ADDED
+            "lora_weight": st.session_state.video_lora_weight, # ADDED
+            "enable_safety_checker": False # Hardcoded as requested
         }
         
         if st.session_state.video_seed is not None:
@@ -655,10 +661,15 @@ def generate_video():
             generation_params = {
                 "timestamp": datetime.datetime.now().isoformat(),
                 "model": "Wan-I2V",
-                "prompt": final_prompt,
+                "prompt": current_prompt,
+                "negative_prompt": st.session_state.video_negative_prompt,
                 "strength": st.session_state.video_strength,
                 "motion_bucket_id": st.session_state.motion_bucket_id,
                 "cond_aug": st.session_state.cond_aug,
+                "num_inference_steps": st.session_state.video_num_inference_steps,
+                "fps": st.session_state.video_fps,
+                "num_frames": st.session_state.video_num_frames,
+                "lora_weight": st.session_state.video_lora_weight,
                 "seed": st.session_state.video_seed,
                 "width": st.session_state.video_width,
                 "height": st.session_state.video_height,
@@ -715,7 +726,7 @@ with col_title:
     st.markdown("<h2>AI Content Generator <span class='banana-icon'>🍌</span></h2>", unsafe_allow_html=True)
 
 st.markdown("""
-- **Upload your images:** Upload 1 - 4 images to serve as the basis for your new creation.
+- **Upload your images:** Upload 1 - 4 images to serve as the basis for your new creation. The video tab only uses the **first** image.
 - **Craft a detailed prompt:** Write a clear and descriptive prompt to guide the AI's generation process.
 - **Uncensored Model:** This is an uncensored model version; please use it responsibly.
 - Do not share: This is a private, unshared version of the model. To ensure low resource usage, <span class="private-warning">please do not share this website with others!</span>
@@ -730,16 +741,21 @@ st.subheader("Source Image Uploader")
 uploaded_files = st.file_uploader("🖼️ Upload one or more images (JPG, PNG, WebP)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="main_uploader")
 
 if uploaded_files:
+    # Only update if new files are uploaded, keeping old files until they are replaced
     st.session_state.uploaded_file_objects = uploaded_files
-# Do not clear uploaded_file_objects if uploaded_files is empty, as this would remove the images when switching tabs.
 
 if st.session_state.uploaded_file_objects:
     st.subheader("Your Current Uploads")
+    st.info("💡 The Video tab only uses the first image shown below.")
     
     images_html = "<div class='image-grid'>"
     for uploaded_file in st.session_state.uploaded_file_objects:
         encoded_image = base64.b64encode(uploaded_file.getvalue()).decode("utf-8")
-        images_html += f"<div class='uploaded-image-container'><img src='data:{uploaded_file.type};base64,{encoded_image}' class='uploaded-image-thumbnail'/></div>"
+        # Highlight the first image for the video tab
+        is_first = (uploaded_file == st.session_state.uploaded_file_objects[0])
+        border_style = "border: 4px solid var(--secondary-color);" if is_first else ""
+        
+        images_html += f"<div class='uploaded-image-container' style='{border_style}'><img src='data:{uploaded_file.type};base64,{encoded_image}' class='uploaded-image-thumbnail'/></div>"
     images_html += "</div>"
     
     st.markdown(images_html, unsafe_allow_html=True)
@@ -797,10 +813,10 @@ with tab_image:
         selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2, key="img_resolution_select")
         st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
-        st.session_state.strength = st.slider("Strength (How much the image changes)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength_slider")
-        st.session_state.guidance_scale = st.slider("Guidance Scale", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_slider")
-        st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=10, value=st.session_state.num_images, step=1, key="img_num_images_slider")
-        st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1, key="img_steps_slider")
+        st.session_state.strength = st.slider("Strength (How much the image changes, Default: 0.95)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01, key="img_strength_slider")
+        st.session_state.guidance_scale = st.slider("Guidance Scale (Default: 4.5)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1, key="img_guidance_slider")
+        st.session_state.num_images = st.slider("Number of Images (Default: 1)", min_value=1, max_value=10, value=st.session_state.num_images, step=1, key="img_num_images_slider")
+        st.session_state.num_inference_steps = st.slider("Inference Steps (Default: 40)", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1, key="img_steps_slider")
         seed_input = st.number_input("Seed (Optional, leave empty for random)", value=st.session_state.seed, step=1, format="%d", key="img_seed_input")
         st.session_state.seed = seed_input
         st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker, key="img_safety_check")
@@ -817,9 +833,11 @@ with tab_video:
         col_v1, col_v2 = st.columns([4, 1])
 
         with col_v1:
-            video_prompt = st.text_area("🖊 Video Prompt (What should the video show?)", placeholder="e.g., A majestic dragon flying over a cyberpunk city at night.", height=100, key="video_prompt_input")
+            video_prompt = st.text_area("🖊 Video Prompt (What should the video show?)", placeholder="e.g., A majestic dragon flying over a cyberpunk city at night.", height=70, key="video_prompt_input")
             st.session_state.video_prompt = video_prompt
-            st.info("The Wan-I2V model only uses the **first** uploaded image as the initial frame.")
+            
+            video_negative_prompt = st.text_area("🚫 Negative Prompt (What should the video AVOID?)", placeholder="e.g., blurry, out of focus, poor quality, watermark, text.", height=70, key="video_negative_prompt_input")
+            st.session_state.video_negative_prompt = video_negative_prompt
 
         with col_v2:
             st.markdown("<div style='margin-top: 2rem;'>", unsafe_allow_html=True)
@@ -833,7 +851,6 @@ with tab_video:
             st.subheader("Generated Video")
             video_data = st.session_state.video_generated_data
             
-            # Display video using Streamlit's built-in video player
             st.video(video_data['bytes'], format='video/mp4')
             
             st.download_button(
@@ -848,24 +865,35 @@ with tab_video:
         with st.expander("⚙️ Advanced Settings (Image-to-Video)"):
             st.markdown("Customize how the **Wan-I2V** model generates your video.")
 
-            # Resolution options, 480P equivalent default
-            video_resolution_options = {
-                "480P (832x480)": (832, 480),
-                "720P (1280x720)": (1280, 720),
-            }
-            selected_video_resolution = st.selectbox("Select Resolution", list(video_resolution_options.keys()), index=0, key="vid_resolution_select")
-            st.session_state.video_width, st.session_state.video_height = video_resolution_options[selected_video_resolution]
-            st.caption("Note: Higher resolutions take significantly longer to generate.")
+            col_res, col_frames = st.columns(2)
+            with col_res:
+                video_resolution_options = {
+                    "832x480 (Default)": (832, 480),
+                    "1280x720 (720P)": (1280, 720),
+                }
+                selected_video_resolution = st.selectbox("Select Resolution", list(video_resolution_options.keys()), index=0, key="vid_resolution_select")
+                st.session_state.video_width, st.session_state.video_height = video_resolution_options[selected_video_resolution]
 
-            st.session_state.video_strength = st.slider("Strength (How much the video deviates from the image)", min_value=0.0, max_value=1.0, value=st.session_state.video_strength, step=0.01, key="vid_strength_slider")
-            st.session_state.motion_bucket_id = st.slider("Motion Bucket ID (Controls amount of motion/activity)", min_value=1, max_value=255, value=st.session_state.motion_bucket_id, step=1, key="vid_motion_bucket_slider")
-            st.session_state.cond_aug = st.slider("Conditioning Augmentation (Controls fidelity vs creativity)", min_value=0.0, max_value=0.1, value=st.session_state.cond_aug, step=0.01, format="%.2f", key="vid_cond_aug_slider")
+            with col_frames:
+                st.session_state.video_num_frames = st.slider("Number of Frames (Default: 16)", min_value=16, max_value=64, value=st.session_state.video_num_frames, step=16, key="vid_num_frames_slider")
+                st.caption("Videos are generated in segments of 16 frames. 16 frames = ~1.3 seconds at 12 FPS.")
+                
+            col_steps, col_fps = st.columns(2)
+            with col_steps:
+                st.session_state.video_num_inference_steps = st.slider("Inference Steps (Default: 50)", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=1, key="vid_steps_slider")
+            with col_fps:
+                st.session_state.video_fps = st.slider("Frames Per Second (Default: 12)", min_value=1, max_value=12, value=st.session_state.video_fps, step=1, key="vid_fps_slider")
+
+
+            st.session_state.video_strength = st.slider("Strength (Deviation from Image, Default: 0.95)", min_value=0.0, max_value=1.0, value=st.session_state.video_strength, step=0.01, key="vid_strength_slider")
+            st.session_state.motion_bucket_id = st.slider("Motion Bucket ID (Amount of movement, Default: 127)", min_value=1, max_value=255, value=st.session_state.motion_bucket_id, step=1, key="vid_motion_bucket_slider")
+            st.session_state.cond_aug = st.slider("Conditioning Augmentation (Fidelity vs Creativity, Default: 0.02)", min_value=0.0, max_value=0.1, value=st.session_state.cond_aug, step=0.01, format="%.2f", key="vid_cond_aug_slider")
+            st.session_state.video_lora_weight = st.slider("LoRA Weight (Default: 0.7)", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01, key="vid_lora_weight_slider")
 
             video_seed_input = st.number_input("Seed (Optional, leave empty for random)", value=st.session_state.video_seed, step=1, format="%d", key="vid_seed_input")
             st.session_state.video_seed = video_seed_input
             
-            # Hardcoded to False as requested
-            st.markdown("The **Enable Safety Checker** is set to **OFF (False)** for this model per your request.")
+            st.markdown("The **Enable Safety Checker** is set to **OFF (False)** for this model.")
             
     else:
         # --- Authentication Form ---
@@ -880,4 +908,4 @@ with tab_video:
                 authenticate_video_tab(password_input)
                 
         st.markdown("---")
-        st.info("The password is **correct**.")
+        
