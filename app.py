@@ -345,6 +345,7 @@ def upload_files_to_fal(uploaded_files):
 
 # --- Session State Initialization (Retained) ---
 if 'generated_images' not in st.session_state: st.session_state.generated_images = {}
+# Initial values based on original UI defaults (index=2 for 1024x1024, strength=0.95, guidance=4.5, num_images=1, steps=40)
 if 'strength' not in st.session_state: st.session_state.strength = 0.95
 if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5
 if 'num_images' not in st.session_state: st.session_state.num_images = 1
@@ -356,6 +357,8 @@ if 'height' not in st.session_state: st.session_state.height = 1024
 if 'is_generating_clicked' not in st.session_state: st.session_state.is_generating_clicked = False
 if 'prompt' not in st.session_state: st.session_state.prompt = ""
 if 'negative_prompt' not in st.session_state: st.session_state.negative_prompt = "low quality, bad anatomy, bad hands, low resolution, worst quality, watermark"
+
+# Video defaults (kept from last good attempt)
 if 'video_generated_data' not in st.session_state: st.session_state.video_generated_data = None
 if 'video_prompt' not in st.session_state: st.session_state.video_prompt = ""
 if 'video_negative_prompt' not in st.session_state: st.session_state.video_negative_prompt = "" 
@@ -559,6 +562,7 @@ def generate_video():
 if st.session_state.is_generating_clicked or st.session_state.video_is_generating_clicked:
     spinner_text = "Working on your video masterpiece (This may take a few minutes)..." if st.session_state.video_is_generating_clicked else "Working on your image masterpiece..."
     
+    # EXACTLY the full-screen loading spinner you want
     st.markdown(f"""
     <div class="loading-overlay">
         <div class="spinner-icon"></div>
@@ -579,12 +583,12 @@ st.subheader("Image and Video Generator")
 
 st.markdown("---")
 
-# --- Tabs Implementation ---
+# --- Tabs Implementation (Image tab must be first) ---
 tab_image, tab_video = st.tabs(["🖼️ Image to Image (Seedream)", "🎥 Image to Video (Wan-I2V)"])
 
 
 # ----------------------------------------------------
-# TAB 1: Image to Image (Seedream) - Unprotected (REPLICATED LAYOUT)
+# TAB 1: Image to Image (Seedream) - Unprotected (EXACT REPLICATION)
 # ----------------------------------------------------
 with tab_image:
     
@@ -609,7 +613,7 @@ with tab_image:
                     use_container_width=True
                 )
     else:
-        st.info("Your generated image(s) will appear here after generation.")
+        # NO st.info() here - only the placeholder image
         st.image("https://placehold.co/1024x1024/2f2f2f/cccccc?text=Output+Preview", use_column_width="auto")
 
     st.markdown("---")
@@ -652,7 +656,7 @@ with tab_image:
         st.session_state.is_generating_clicked = True
         st.rerun()
 
-    # 3. Advanced Settings (After the button, as in original)
+    # 3. Advanced Settings (Placement MUST be directly after the button)
     with st.expander("⚙️ Advanced Settings"):
         
         resolution_options = {
@@ -663,12 +667,8 @@ with tab_image:
             "4096x4096 (4K)": (4096, 4096),
         }
         
-        # Use simple selectbox structure from original
-        current_res_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
-        # Ensure index=2 for 1024x1024 as per the user's file
-        default_index = list(resolution_options.keys()).index("1024x1024")
-
-        selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=default_index, key="img_resolution_select")
+        # Hardcoding index=2 for 1024x1024 to match the original file exactly.
+        selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2, key="img_resolution_select")
         st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
         # Sliders - linear flow as per original
@@ -709,14 +709,14 @@ with tab_video:
                     use_container_width=True
                 )
         else:
-            st.info("Your generated video will appear here. Note: Only the **first** uploaded image is used.")
+            # NO st.info() here - only the placeholder image
             st.image("https://placehold.co/832x480/2f2f2f/cccccc?text=Video+Output+Preview", use_column_width="auto")
         
         st.markdown("---")
         
         # 2. Controls Section
         st.markdown("### **Video Generation Parameters**")
-
+        
         # Prompts
         video_prompt = st.text_area("🖊 Video Prompt", placeholder="e.g., A majestic dragon flying over a cyberpunk city at night.", height=100, key="video_prompt_input")
         st.session_state.video_prompt = video_prompt
@@ -741,7 +741,7 @@ with tab_video:
                     "832x480": (832, 480),
                     "1280x720 (720P)": (1280, 720),
                 }
-                # Ensure correct index is used
+                # Default to 832x480 (index 0)
                 current_v_res_key = next((k for k, v in video_resolution_options.items() if v == (st.session_state.video_width, st.session_state.video_height)), "832x480")
                 default_v_index = list(video_resolution_options.keys()).index(current_v_res_key)
                 
