@@ -146,23 +146,36 @@ st.markdown("""
     }
 
     /* ======================================================= */
-    /* *** GENERATED IMAGE GALLERY STYLING *** */
+    /* *** GENERATED IMAGE GALLERY STYLING (MODIFIED FOR SMALLER OUTPUT) *** */
     /* ======================================================= */
     
     /* Container for generated image results */
     .generated-image-result {
         margin-bottom: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center; /* Center image block */
     }
-    /* Generated image itself */
-    .generated-image-result [data-testid="stImage"] img {
+    
+    /* Generated image itself - Target the Streamlit image element wrapper*/
+    .generated-image-result [data-testid="stImage"] {
+        max-width: 200px; /* Max size for the thumbnail block, making images smaller */
+        height: auto;
         border-radius: 8px;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        /* Small gap adjustment for the 3-column generated grid */
-        margin-bottom: 5px; 
+        overflow: hidden;
+        margin-bottom: 5px; /* Spacing between image and buttons */
     }
 
+    /* Actual <img> tag inside the result */
+    .generated-image-result [data-testid="stImage"] img {
+        border-radius: 8px;
+        width: 100%; /* Fill the max-width of its container (200px) */
+        height: auto;
+        object-fit: cover;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); 
+        cursor: pointer; 
+    }
+    
 </style>
 """, unsafe_allow_html=True)
 
@@ -188,7 +201,7 @@ except Exception:
     r2_client = None
     STAGING_ENABLED = False
 
-# Initialize FAL Client (FIX FOR TYPE ERROR)
+# Initialize FAL Client 
 try:
     # Explicitly load FAL credentials from Streamlit secrets
     FAL_KEY = st.secrets["FAL_KEY"]
@@ -197,10 +210,8 @@ try:
     # Initialize the client with explicit key/secret
     fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
 except KeyError:
-    # No need to show st.error here, the app will run with a warning instead.
     fal = None
 except Exception as e:
-    # No need to show st.error here, the app will run with a warning instead.
     fal = None
 
 
@@ -445,10 +456,36 @@ st.markdown("---")
 # --------------------------------------------------
 with tab_image:
     
-    col_input_img, col_output_img = st.columns([1, 2])
+    # 1. ADJUSTED COLUMN WIDTH: [1.3, 1.7] for wider input area
+    col_input_img, col_output_img = st.columns([1.3, 1.7])
 
     with col_input_img:
         st.markdown("## Image Input Controls")
+        
+        # 2. GENERATE BUTTON PLACEMENT (FIXED: Prominent placement at the top)
+        final_image_seed = None 
+        
+        if fal is None:
+            st.warning("Cannot connect to AI service.")
+        else:
+            if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
+                if st.session_state.prompt:
+                    st.session_state.image_result_urls = fal_generate_image(
+                        st.session_state.prompt, 
+                        st.session_state.negative_prompt, 
+                        st.session_state.width, 
+                        st.session_state.height, 
+                        st.session_state.num_images, 
+                        st.session_state.strength, 
+                        st.session_state.guidance_scale, 
+                        st.session_state.num_inference_steps, 
+                        final_image_seed, 
+                        input_image_url
+                    )
+                else:
+                    st.toast("Please enter a prompt to generate an image.") 
+
+        st.markdown("---") # Separator below the button
         
         # --- Image Upload Section ---
         input_image_url = display_image_uploader_with_thumbnail(
@@ -458,39 +495,9 @@ with tab_image:
         
         st.markdown("---") # Separator after the image upload
         
-        # --- GENERATE BUTTON LOCATION (FIXED) ---
-        
-        # Use columns to place the button on the right of the header
-        header_col, button_col = st.columns([2, 1])
-
-        with header_col:
-            st.markdown("### Enter Prompts")
-
-        with button_col:
-            final_image_seed = None 
-            
-            if fal is None:
-                st.warning("Cannot connect to AI service.")
-            else:
-                # The generate button is now conveniently located here
-                if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
-                    if st.session_state.prompt:
-                        st.session_state.image_result_urls = fal_generate_image(
-                            st.session_state.prompt, 
-                            st.session_state.negative_prompt, 
-                            st.session_state.width, 
-                            st.session_state.height, 
-                            st.session_state.num_images, 
-                            st.session_state.strength, 
-                            st.session_state.guidance_scale, 
-                            st.session_state.num_inference_steps, 
-                            final_image_seed, 
-                            input_image_url
-                        )
-                    else:
-                        st.toast("Please enter a prompt to generate an image.") 
-
         # --- Prompts ---
+        st.markdown("### Enter Prompts")
+
         st.session_state.prompt = st.text_area(
             "Enter your **image prompt**",
             value=st.session_state.prompt,
@@ -535,7 +542,7 @@ with tab_image:
             if 0 <= st.session_state.remove_index < len(st.session_state.image_result_urls):
                 st.session_state.image_result_urls.pop(st.session_state.remove_index)
             st.session_state.remove_index = None 
-            st.rerun() # Use rerun instead of experimental_rerun
+            st.rerun() 
 
         # --- Gallery Display ---
         if st.session_state.image_result_urls:
@@ -545,16 +552,21 @@ with tab_image:
             for i, url in enumerate(st.session_state.image_result_urls):
                 with cols[i % 3]: 
                     
-                    # Generated Image Display Block
+                    # Generated Image Display Block (Styled to be small via CSS)
                     st.markdown('<div class="generated-image-result">', unsafe_allow_html=True)
-                    st.image(url, use_column_width=True)
+                    # NOTE: use_column_width=False lets the CSS max-width override the column width.
+                    st.image(url, use_column_width=False) 
                     
+                    # Link to view full size (enlargeable on click)
+                    st.markdown(f'<a href="{url}" target="_blank" style="font-size: 0.85rem; color: var(--secondary-color);">View Full Size</a>', unsafe_allow_html=True)
+
                     st.button(
-                        "❌",
+                        "❌ Remove",
                         key=f"remove_gallery_img_btn_{i}",
                         help="Remove this generated image from the gallery.",
                         type="secondary",
-                        on_click=lambda index=i: st.session_state.__setitem__('remove_index', index)
+                        on_click=lambda index=i: st.session_state.__setitem__('remove_index', index),
+                        use_container_width=True
                     )
                         
                     st.download_button(
@@ -566,7 +578,7 @@ with tab_image:
                     )
                     st.markdown("</div>", unsafe_allow_html=True)
         else:
-            st.info("Your generated images will appear here as small thumbnails (3 in a row).")
+            st.info("Your generated images will appear here as small thumbnails (up to 3 in a row). Click 'View Full Size' to enlarge them.")
 
             
 # --------------------------------------------------
@@ -589,11 +601,31 @@ with tab_video:
     else:
         st.success("Access Granted! Generating videos with Wan-I2V.")
         
-        col_input_video, col_output_video = st.columns([1, 2])
+        # 1. ADJUSTED COLUMN WIDTH: [1.3, 1.7] for wider input area
+        col_input_video, col_output_video = st.columns([1.3, 1.7])
 
         with col_input_video:
             st.markdown("## Video Input Controls")
             
+            # 2. GENERATE BUTTON PLACEMENT (FIXED: Prominent placement at the top)
+            final_video_seed = None 
+            
+            if fal is None:
+                st.warning("Cannot connect to AI service.")
+            else:
+                if st.button("🎬 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
+                    if st.session_state.video_prompt:
+                        st.session_state.video_result_url = fal_generate_video(
+                            st.session_state.video_prompt, 
+                            st.session_state.negative_prompt, 
+                            input_video_image_url, 
+                            final_video_seed
+                        )
+                    else:
+                        st.toast("Please enter a prompt to generate a video.") 
+            
+            st.markdown("---") # Separator below the button
+
             # --- Image Upload Section for Video I2V ---
             input_video_image_url = display_image_uploader_with_thumbnail(
                 'video_upload_img_data',
@@ -602,32 +634,9 @@ with tab_video:
 
             st.markdown("---") # Separator after the image upload
 
-            # --- GENERATE BUTTON LOCATION (FIXED) ---
-        
-            # Use columns to place the button on the right of the header
-            video_header_col, video_button_col = st.columns([2, 1])
-
-            with video_header_col:
-                st.markdown("### Enter Prompts")
-
-            with video_button_col:
-                final_video_seed = None 
-                
-                if fal is None:
-                    st.warning("Cannot connect to AI service.")
-                else:
-                    if st.button("🎬 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
-                        if st.session_state.video_prompt:
-                            st.session_state.video_result_url = fal_generate_video(
-                                st.session_state.video_prompt, 
-                                st.session_state.negative_prompt, 
-                                input_video_image_url, 
-                                final_video_seed
-                            )
-                        else:
-                            st.toast("Please enter a prompt to generate a video.") 
-            
             # --- Prompts ---
+            st.markdown("### Enter Prompts")
+            
             st.session_state.video_prompt = st.text_area(
                 "Enter your **video prompt**",
                 value=st.session_state.video_prompt,
