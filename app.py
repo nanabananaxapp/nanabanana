@@ -40,8 +40,9 @@ st.markdown("""
       visibility: hidden;
       height: 0%;
     }
-    /* Hiding all Streamlit alert boxes/notices as requested (Success, Info, Warning, Error) */
-    /* NOTE: We allow st.error messages related to FAL connection to be displayed for debugging/status */
+    /* Hiding all Streamlit alert boxes/notices as requested (Success, Info, Warning, Error) 
+       NOTE: We specifically only allow st.warning for the optional video password. 
+    */
     
     /* Color Palette Variables - NANO BANANA X AI Theme */
     :root {
@@ -206,12 +207,15 @@ try:
     else:
         r2_client = None
         STAGING_ENABLED = False
-except Exception:
+except Exception as e:
+    # Log the R2 error, but don't show it in the UI
+    print(f"R2 Setup Failed: {e}")
     r2_client = None
     STAGING_ENABLED = False
 
-# Initialize FAL Client (FIXED ROBUSTNESS)
+# Initialize FAL Client (FIXED ROBUSTNESS - HIDES UI ERROR MESSAGE)
 try:
+    # Attempt to retrieve secrets (These must be present and valid for connection)
     FAL_KEY = st.secrets.get("FAL_KEY")
     FAL_SECRET = st.secrets.get("FAL_SECRET")
     
@@ -219,13 +223,16 @@ try:
         fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
         IS_FAL_READY = True
     else:
+        # Keys are missing from secrets, or st.secrets is not available.
         fal = None
         IS_FAL_READY = False
-        FAL_ERROR_MESSAGE = "FAL API keys are missing or invalid in the secrets file. Check configuration."
+        print("FAL AI connection status: Keys missing from secrets file.")
 except Exception as e:
+    # Connection failed for another reason (e.g., network error, invalid keys provided in the client call)
     fal = None
     IS_FAL_READY = False
-    FAL_ERROR_MESSAGE = f"FAL AI Service connection failed during initialization: {e}"
+    # Print the detailed error to the console for debugging, but hide it from the user interface
+    print(f"FAL AI Service connection failed during initialization: {e}")
 
 
 # --- Session State Initialization ---
@@ -327,8 +334,10 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
             
             st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
 
-        except Exception:
+        except Exception as e:
+            # We must keep this error message because it relates to USER UPLOADED file corruption, not the FAL API.
             st.error("Uploaded file is corrupted or not a valid image. Please use the 'Clear file' button above to remove it.")
+            print(f"User uploaded corrupted file: {e}")
             input_image_url = None 
             st.session_state[session_state_key] = None
         
@@ -339,7 +348,8 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
 def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
     """Submits the image generation request to the FAL API."""
     if fal is None:
-        st.error("Cannot generate image: FAL service is not initialized. Check error message in the input column.")
+        # Silently fail generation if FAL is not ready (disabled button handles the UI)
+        print("Attempted generation while FAL client was not ready.")
         return []
 
     st.toast("Submitting Image Generation Request...")
@@ -388,15 +398,17 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
         return final_urls
 
     except Exception as e:
-        st.error("Image Generation Failed. Check the console for details.")
-        print(f"Image Generation Failed: {e}")
+        # Log the generation failure, but don't use st.error on the UI
+        print(f"Image Generation Failed (FAL API Call Error): {e}")
+        st.toast("Generation failed. Check the console for error details.", icon="⚠️")
         return []
 
 
 def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
     """Submits the video generation request to the FAL API (Wan-I2V)."""
     if fal is None:
-        st.error("Cannot generate video: FAL service is not initialized. Check error message in the input column.")
+        # Silently fail generation if FAL is not ready (disabled button handles the UI)
+        print("Attempted video generation while FAL client was not ready.")
         return None
         
     st.toast("Submitting Video Generation Request...")
@@ -415,7 +427,7 @@ def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None)
         "lora_weight": st.session_state.video_lora_weight,
         "seed": seed,
         "enable_safety_checker": st.session_state.video_safety_checker,
-        "image_url": input_image_url
+        "image_url": input_video_image_url
     }
     
     try:
@@ -429,8 +441,9 @@ def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None)
         return staged_url
 
     except Exception as e:
-        st.error("Video Generation Failed. Check the console for details.")
-        print(f"Video Generation Failed: {e}")
+        # Log the generation failure, but don't use st.error on the UI
+        print(f"Video Generation Failed (FAL API Call Error): {e}")
+        st.toast("Video generation failed. Check the console for error details.", icon="⚠️")
         return None
 
 # --- Authentication Logic ---
@@ -444,6 +457,7 @@ def check_video_password_callback():
         st.balloons()
         st.rerun() 
     else:
+        # Using a password error message, as this is an explicit security check
         st.session_state.password_error = "Incorrect password. Try again."
         st.session_state.video_authenticated = False
 
@@ -492,12 +506,8 @@ with tab_image:
         )
         
         # --- GENERATE BUTTON (FIXED PLACEMENT & SIZING) ---
+        # The button is disabled if IS_FAL_READY is False, silencing the error.
         st.markdown('<div style="margin-top: 20px; margin-bottom: 20px;">', unsafe_allow_html=True)
-        
-        # Check if the button should be disabled and set the error message
-        button_disabled_reason = None
-        if not IS_FAL_READY:
-            button_disabled_reason = FAL_ERROR_MESSAGE
             
         if st.button("✨ Generate Image", key="generate_image_button", type="primary", disabled=(not IS_FAL_READY)):
             if st.session_state.prompt:
@@ -516,9 +526,7 @@ with tab_image:
             else:
                 st.toast("Please enter a prompt to generate an image.") 
 
-        if button_disabled_reason:
-            # Show a prominent error if FAL is not ready
-            st.error(f"Cannot generate: {button_disabled_reason}") 
+        # Removed the st.error display here
         st.markdown('</div>', unsafe_allow_html=True) 
 
 
@@ -602,6 +610,7 @@ with tab_video:
         st.button("Unlock Video Generator", key="video_unlock_button", on_click=check_video_password_callback, type="primary")
         
         if st.session_state.password_error:
+            # Only showing this error because it relates to a USER INPUT (password), not a backend API issue.
             st.error(st.session_state.password_error)
             st.session_state.password_error = None
 
@@ -640,11 +649,8 @@ with tab_video:
             )
             
             # --- GENERATE BUTTON (FIXED PLACEMENT & SIZING) ---
+            # The button is disabled if IS_FAL_READY is False, silencing the error.
             st.markdown('<div style="margin-top: 20px; margin-bottom: 20px;">', unsafe_allow_html=True)
-
-            video_button_disabled_reason = None
-            if not IS_FAL_READY:
-                video_button_disabled_reason = FAL_ERROR_MESSAGE
                 
             if st.button("🎬 Generate Video", key="generate_video_button", type="primary", disabled=(not IS_FAL_READY)):
                 if st.session_state.video_prompt:
@@ -657,8 +663,7 @@ with tab_video:
                 else:
                     st.toast("Please enter a prompt to generate a video.") 
             
-            if video_button_disabled_reason:
-                st.error(f"Cannot generate: {video_button_disabled_reason}")
+            # Removed the st.error display here
             st.markdown('</div>', unsafe_allow_html=True) 
 
 
