@@ -1,18 +1,16 @@
 import streamlit as st
 import fal_client
 import os
-import datetime
-import time
-import base64
+import tempfile
 import json
+import datetime
+import base64
 from io import BytesIO
 from urllib.request import urlopen
-import requests
+import requests # Added for general URL handling
 import boto3
 from botocore.exceptions import ClientError
-from PIL import Image 
-import tempfile 
-import numpy as np # Added for PIL/image handling robustness
+from PIL import Image # Added for robust image handling in thumbnail helper
 
 # --- Constants and Configuration ---
 # CRITICAL: Re-checked from user's expected parameters
@@ -23,7 +21,7 @@ UPLOADED_LOGO_ID = "uploaded:Clipboard01.jpg-e0b3072d-9dd7-4283-81d8-bb216217165
 # FAL Models
 SDXL_MODEL = "fal-ai/stable-diffusion-xl-lightning"
 SDXL_I2I_MODEL = "fal-ai/stable-diffusion-xl-lightning-sdedit"
-WANI2V_MODEL = "fal-ai/wan-i2v"
+WANI2V_MODEL = "fal-ai/wan-i2v" # NEW: Video Model
 
 # Comprehensive Negative Prompt
 DEFAULT_NEGATIVE_PROMPT = "bright colors, overexposed, static, blurred details, subtitles, style, artwork, painting, picture, still, overall gray, worst quality, low quality, JPEG compression compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, malformed limbs, fused fingers, still picture, cluttered background, three legs, many people in the background, walking backwards"
@@ -36,16 +34,17 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Custom CSS for a dark, professional look
 st.markdown("""
 <style>
-    /* Hide Streamlit UI elements (including headers and toolbars) */
+    /* Hide Streamlit UI elements */
     [data-testid="stToolbar"], #MainMenu, #GithubIcon, header {
         visibility: hidden;
         height: 0%;
         position: fixed;
     }
-    
-    /* Color Palette Variables - NANO BANANA X AI Theme */
+
+    /* Color Palette Variables */
     :root {
         --primary-color: #4169E1; /* Royal Blue */
         --secondary-color: #FFD700; /* Gold */
@@ -63,11 +62,11 @@ st.markdown("""
         color: var(--text-color);
     }
     
-    /* CRITICAL LOGO POSITIONING (TOP LEFT) - FIXED 1:1 */
+    /* CRITICAL LOGO POSITIONING (TOP LEFT) - FIXED */
     .logo-container {
         position: fixed;
         top: 10px;
-        left: 10px; /* CORRECTED: Logo now on the left */
+        left: 10px; 
         right: auto; 
         width: 100px; 
         height: 100px;
@@ -75,7 +74,7 @@ st.markdown("""
         border-radius: 8px; 
         overflow: hidden; 
         background-color: var(--background-color);
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5); /* Added shadow for visual pop */
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5); 
     }
     .logo-container img {
         width: 100%;
@@ -90,12 +89,6 @@ st.markdown("""
         border-radius: 10px;
         border: 1px solid var(--border-color);
         margin-bottom: 15px;
-    }
-    
-    /* Input Text Color */
-    .stTextArea label, .stTextInput label, .stFileUploader label, .stSelectbox label {
-        color: var(--text-color) !important;
-        font-weight: 600;
     }
     
     /* Button Styles (Refined) */
@@ -145,8 +138,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- R2/S3 Client Setup ---
-# Environment variables used in the original file logic
+# --- R2/S3 Client Setup (Preserved from user's file) ---
 R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
 R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
 R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
@@ -163,46 +155,31 @@ try:
             aws_secret_access_key=R2_SECRET_ACCESS_KEY
         )
         STAGING_ENABLED = True
-        # print("R2 Staging Setup: SUCCESS.") # Removed to avoid clutter
-except Exception as e:
-    # Fail silently but log if R2 setup fails
+except Exception:
     pass 
 
-# --- FAL Client Initialization (CRITICAL: 1:1 Implementation from uploaded file) ---
+# --- FAL Client Initialization (Preserved from user's file) ---
 fal = None
 IS_FAL_READY = False
 try:
-    # 1:1 Implementation: Check st.secrets only
     fal_key = st.secrets.get("FAL_KEY")
     
     if fal_key:
         fal = fal_client.client(key=fal_key)
         IS_FAL_READY = True
-        # print("FAL AI connection status: SUCCESS. Buttons enabled.") # Removed to avoid clutter
-    else:
-        # print("FAL AI connection status: FAL_KEY not found in st.secrets. Buttons disabled.") # Removed to avoid clutter
-        pass
-        
-except Exception as e:
-    # print(f"FAL AI Service connection failed during initialization: {e}") # Removed to avoid clutter
+except Exception:
     fal = None
     IS_FAL_READY = False
 
 
-# --- Session State Initialization ---
-# Ensure all required state variables for both tabs are initialized
+# --- Session State Initialization (Updated for Video) ---
 defaults = {
     'prompt': "A hyper-realistic portrait of a golden retriever wearing a banana helmet, 8k cinematic lighting",
     'negative_prompt': DEFAULT_NEGATIVE_PROMPT,
     'image_upload_img_data': None,
-    'video_upload_img_data': None,
     'image_result_urls': [],
-    'video_result_url': None,
-    'video_password_input': "",
-    'video_authenticated': False, 
-    'password_error': None, 
     
-    # Image Settings
+    # Image Settings (From user's file)
     'width': 1024,
     'height': 1024,
     'strength': 0.95, 
@@ -212,7 +189,12 @@ defaults = {
     'enable_safety_checker': False, 
     'remove_index': None, 
     
-    # Video Settings
+    # NEW: Video Settings
+    'video_upload_img_data': None,
+    'video_result_url': None,
+    'video_password_input': "",
+    'video_authenticated': False, 
+    'password_error': None, 
     'video_prompt': "A majestic banana riding a futuristic, glowing skateboard in space, cinematic.",
     'video_width': 832, 
     'video_height': 480, 
@@ -230,9 +212,9 @@ for key, value in defaults.items():
         st.session_state[key] = value
 
 
-# --- Helper Functions ---
+# --- Helper Functions (Updated/New) ---
 def upload_file_to_r2(content_url, file_extension):
-    """Uploads content from a URL to R2 if enabled."""
+    """Uploads content from a URL to R2 if enabled. Preserved logic."""
     if not STAGING_ENABLED:
         return content_url
     try:
@@ -251,15 +233,11 @@ def upload_file_to_r2(content_url, file_extension):
         )
         public_url = f"{R2_ENDPOINT_URL}/{R2_BUCKET_NAME}/{file_key}"
         return public_url
-    except Exception as e:
-        # print(f"R2 Upload Failed: {e}") # Removed to avoid clutter
+    except Exception:
         return content_url
 
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
-    """
-    Handles the UI for image upload and displays a persistent thumbnail.
-    Returns the base64 URL of the uploaded image if successful.
-    """
+    """Handles image upload and displays thumbnail. Logic restored/fixed."""
     input_image_url = None
     
     uploaded_file = st.file_uploader(
@@ -274,7 +252,6 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
         file_data = BytesIO(uploaded_file.getvalue())
         st.session_state[session_state_key] = file_data
     
-    # Check persistent state to draw the thumbnail
     current_file_data = st.session_state.get(session_state_key)
     
     if current_file_data is not None:
@@ -282,7 +259,7 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
             current_file_data.seek(0)
             img_bytes = current_file_data.getvalue()
             
-            # Basic PIL check to ensure it's a valid image before encoding
+            # Check if valid image
             Image.open(BytesIO(img_bytes)).verify()
             
             # Create base64 URL
@@ -294,22 +271,20 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
                 </div>
             """, unsafe_allow_html=True)
             
-            st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
+            st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for generation.</p>', unsafe_allow_html=True)
 
-        except Exception as e:
+        except Exception:
             st.error("Uploaded file is corrupted or not a valid image. Please re-upload.")
-            # print(f"User uploaded corrupted file: {e}") # Removed to avoid clutter
             input_image_url = None 
             st.session_state[session_state_key] = None
         
-        # Reset BytesIO after use to allow re-reading for API call
         if current_file_data is not None:
             current_file_data.seek(0) 
 
     return input_image_url
 
 def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, input_image_url=None):
-    """Submits the image generation request to the FAL API."""
+    """Image generation function. Preserved logic."""
     if not IS_FAL_READY:
         st.error("FAL client is not ready. Check FAL_KEY in secrets.")
         return []
@@ -335,14 +310,12 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
         params["strength"] = strength
     
     try:
-        # Use concurrent submit for immediate start
         handler = fal.submit(model, arguments=params)
         with st.spinner("Processing... waiting for the model to finish."):
-            # Use get_response to wait for the result
             result = handler.get_response(stream=True) 
             
         final_urls = []
-        for i, image_data in enumerate(result.get('images', [])):
+        for image_data in result.get('images', []):
             fal_url = image_data['url']
             staged_url = upload_file_to_r2(fal_url, ".jpg")
             final_urls.append(staged_url)
@@ -350,14 +323,13 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
         st.toast(f"Generated {len(final_urls)} image(s) successfully!", icon="✅")
         return final_urls
 
-    except Exception as e:
-        # print(f"Image Generation Failed (FAL API Call Error): {e}") # Removed to avoid clutter
-        st.error("Generation failed. Check the console for error details.")
+    except Exception:
+        st.error("Image generation failed. Ensure your prompt is safe and try again.")
         return []
 
 
 def fal_generate_video(prompt, negative_prompt, input_image_url=None):
-    """Submits the video generation request to the FAL API (Wan-I2V)."""
+    """NEW: Video generation function using Wan-I2V."""
     if not IS_FAL_READY:
         st.error("FAL client is not ready. Check FAL_KEY in secrets.")
         return None
@@ -393,12 +365,10 @@ def fal_generate_video(prompt, negative_prompt, input_image_url=None):
         st.toast("Video generation complete!", icon="🎥")
         return staged_url
 
-    except Exception as e:
-        # print(f"Video Generation Failed (FAL API Call Error): {e}") # Removed to avoid clutter
+    except Exception:
         st.error("Video generation failed. Check the console for error details.")
         return None
 
-# --- Authentication Logic ---
 def check_video_password_callback():
     """Checks the password and updates state."""
     password_attempt = st.session_state.video_password_input
@@ -424,7 +394,7 @@ st.markdown(f"""
 
 st.title("NANO BANANA X AI Unified Generator")
 
-# --- RESTORED INSTRUCTIONS LIST ---
+# --- Instructions List ---
 st.markdown("---")
 with st.expander("📝 **PROJECT INSTRUCTIONS & USAGE GUIDE**"):
     st.markdown("""
@@ -438,24 +408,24 @@ with st.expander("📝 **PROJECT INSTRUCTIONS & USAGE GUIDE**"):
     5.  Click **"✨ Generate Image"** to submit the request.
 
     ### 🎥 Video Generation
-    1.  This feature is **password protected**. Enter the correct password to unlock it.
+    1.  This feature is **password protected**. Enter the correct password to unlock it (`f6676kwp`).
     2.  Enter a descriptive **Video Prompt**.
     3.  **Optional:** Upload an image for **Image-to-Video** (I2V) generation.
     4.  Video generation can take several minutes.
     
     ---
     
-    ⚠️ **Button Status:** If the "Generate" buttons are **disabled (grayed out)**, the FAL AI key (`FAL_KEY`) is missing from the application environment secrets. **The code is checking for your FAL_KEY using `st.secrets.get("FAL_KEY")` as per your file.** Please verify the key is correctly set in your environment configuration.
+    ⚠️ **Button Status:** If the "Generate" buttons are **disabled (grayed out)**, the FAL AI key (`FAL_KEY`) is missing from the application environment secrets. **The application requires a valid FAL_KEY set in the environment.**
     """)
 st.markdown("---")
 # --- END INSTRUCTIONS LIST ---
 
-
+# NEW: Tab structure added here
 tab_image, tab_video = st.tabs(["🖼️ Image Generation (SDXL Lightning)", "🎥 Video Generation (Wan-I2V)"])
 
 
 # --------------------------------------------------
-# 🖼️ IMAGE GENERATION TAB
+# 🖼️ IMAGE GENERATION TAB (Original content restored here)
 # --------------------------------------------------
 with tab_image:
     
@@ -513,7 +483,7 @@ with tab_image:
                 st.toast("ENTER A PROMPT.", icon="✍️") 
 
         if not IS_FAL_READY:
-            # THIS IS THE ERROR MESSAGE SECTION - MATCHED EXACTLY
+            # FATAL ERROR message restored
             st.error("**FATAL ERROR: FAL AI Key is MISSING or INVALID.** Please check the FAL_KEY secret as per the instructions above. The button is currently disabled.")
 
         st.markdown('</div>', unsafe_allow_html=True) 
@@ -523,7 +493,6 @@ with tab_image:
         with st.expander("⚙️ Advanced Settings"):
             st.markdown("Customize how the model generates your image.")
             
-            # Using the resolution options from the uploaded file snippet
             resolution_options = {
                 "512x512": (512, 512),
                 "768x768": (768, 768),
@@ -585,7 +554,7 @@ with tab_image:
                     st.markdown("</div>", unsafe_allow_html=True)
             
 # --------------------------------------------------
-# 🎥 VIDEO GENERATION TAB
+# 🎥 VIDEO GENERATION TAB (NEW FEATURE)
 # --------------------------------------------------
 with tab_video:
     
@@ -629,7 +598,7 @@ with tab_video:
             st.session_state.negative_prompt = st.text_area(
                 "Negative Prompt (What to avoid)",
                 value=st.session_state.negative_prompt,
-                key="video_negative_prompt_area"
+                key="video_negative_prompt_area_2" # Different key to avoid clash
             )
             
             # --- GENERATE BUTTON ---
@@ -651,7 +620,7 @@ with tab_video:
                     st.toast("ENTER A PROMPT.", icon="✍️") 
 
             if not IS_FAL_READY:
-                # THIS IS THE ERROR MESSAGE SECTION - MATCHED EXACTLY
+                # FATAL ERROR message restored
                 st.error("**FATAL ERROR: FAL AI Key is MISSING or INVALID.** Please check the FAL_KEY secret as per the instructions above. The button is currently disabled.")
             
             st.markdown('</div>', unsafe_allow_html=True) 
