@@ -41,10 +41,8 @@ st.markdown("""
       height: 0%;
     }
     /* Hiding all Streamlit alert boxes/notices as requested (Success, Info, Warning, Error) */
-    .stAlert, [data-testid="stNotification"], [data-testid="stSuccess"], [data-testid="stInfo"], [data-testid="stWarning"], [data-testid="stError"] {
-        display: none !important;
-    }
-
+    /* NOTE: We allow st.error messages related to FAL connection to be displayed for debugging/status */
+    
     /* Color Palette Variables - NANO BANANA X AI Theme */
     :root {
         --primary-color: #4169E1; /* Royal Blue */
@@ -54,6 +52,7 @@ st.markdown("""
         --text-color: #e0e0e0;
         --border-color: #3a3a3a;
         --success-color: #3CB371; /* Medium Sea Green */
+        --error-color: #dc3545; /* Bootstrap Red */
     }
 
     /* General App Styling */
@@ -88,17 +87,23 @@ st.markdown("""
         margin-bottom: 15px;
     }
     
-    /* Primary Button Style (GENERATE) */
+    /* ======================================================= */
+    /* *** BUTTON SIZING FIXES *** */
+    /* ======================================================= */
+
+    /* Primary Button Style (GENERATE) - MADE SMALLER AND MORE COMPACT */
     .stButton[data-testid="stButton-primary"] > button {
         background-color: var(--primary-color);
         color: #ffffff;
-        border-radius: 8px;
+        border-radius: 6px; /* slightly smaller radius */
         border: none;
-        padding: 12px 20px;
-        font-size: 1.1rem;
-        font-weight: 700;
+        padding: 10px 15px; /* Reduced padding for smaller size */
+        font-size: 1.0rem; /* Slightly smaller font */
+        font-weight: 600; 
         transition: background-color 0.3s;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
+        /* Ensure it's not full width if use_container_width=False */
+        max-width: fit-content; 
     }
     .stButton[data-testid="stButton-primary"] > button:hover {
         background-color: #3457c7; /* Darker royal blue on hover */
@@ -132,8 +137,8 @@ st.markdown("""
     .uploaded-thumbnail-wrapper {
         margin-top: 10px;
         margin-bottom: 5px;
-        width: 100px !important; /* Force width */
-        height: 100px !important; /* Force height */
+        width: 100px !important; 
+        height: 100px !important; 
         overflow: hidden;
         border-radius: 8px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
@@ -141,9 +146,9 @@ st.markdown("""
     }
     /* The actual <img> tag inside the wrapper */
     .uploaded-thumbnail-wrapper img {
-        width: 100px !important; /* Force image width */
-        height: 100px !important; /* Force image height */
-        object-fit: cover !important; /* Ensure content fills the box */
+        width: 100px !important; 
+        height: 100px !important; 
+        object-fit: cover !important; 
         border-radius: 8px !important; 
         display: block !important;
         margin: 0 !important;
@@ -205,21 +210,22 @@ except Exception:
     r2_client = None
     STAGING_ENABLED = False
 
-# Initialize FAL Client 
+# Initialize FAL Client (FIXED ROBUSTNESS)
 try:
-    # Explicitly load FAL credentials from Streamlit secrets
-    FAL_KEY = st.secrets["FAL_KEY"]
-    FAL_SECRET = st.secrets["FAL_SECRET"]
+    FAL_KEY = st.secrets.get("FAL_KEY")
+    FAL_SECRET = st.secrets.get("FAL_SECRET")
     
-    # Initialize the client with explicit key/secret
-    fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
-    IS_FAL_READY = True
-except KeyError:
-    fal = None
-    IS_FAL_READY = False
+    if FAL_KEY and FAL_SECRET:
+        fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
+        IS_FAL_READY = True
+    else:
+        fal = None
+        IS_FAL_READY = False
+        FAL_ERROR_MESSAGE = "FAL API keys are missing or invalid in the secrets file. Check configuration."
 except Exception as e:
     fal = None
     IS_FAL_READY = False
+    FAL_ERROR_MESSAGE = f"FAL AI Service connection failed during initialization: {e}"
 
 
 # --- Session State Initialization ---
@@ -251,7 +257,7 @@ if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames
 if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 
 if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False 
 if 'video_seed' not in st.session_state: st.session_state.video_seed = None 
-if 'password_error' not in st.session_state: st.session_state.password_error = None # For authentication error display
+if 'password_error' not in st.session_state: st.session_state.password_error = None 
 
 
 # --- Helper Functions ---
@@ -283,26 +289,22 @@ def upload_file_to_r2(content_url, file_extension):
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
     """
     Handles the UI for image upload using a single-file uploader.
-    The uploaded image is displayed using aggressive CSS applied via markdown 
-    to force a small, fixed-size 100x100 thumbnail.
     """
     input_image_url = None
     
-    # 1. Always show the uploader widget (single file, for I2I)
+    # 1. Always show the uploader widget
     uploaded_file = st.file_uploader(
         label_text, 
         type=["png", "jpg", "jpeg"],
         key=f"uploader_{session_state_key}",
-        accept_multiple_files=False # IMPORTANT: Single file for I2I 
+        accept_multiple_files=False
     )
     
     # 2. Sync Session State (our persistent data storage) with Uploader State
     if uploaded_file is not None:
-        # File is present in the uploader, update persistent storage
         file_data = BytesIO(uploaded_file.getvalue())
         st.session_state[session_state_key] = file_data
     else:
-        # Uploader is empty (user clicked native Clear file), clear persistent storage
         st.session_state[session_state_key] = None
 
     # 3. Check persistent state to draw the tiny, forced thumbnail
@@ -310,10 +312,8 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
     
     if current_file_data is not None:
         try:
-            # Read, prepare base64 URL, and reset pointer
             current_file_data.seek(0)
             img_bytes = current_file_data.getvalue()
-            # Check if the file is a valid image before base64 encoding
             Image.open(BytesIO(img_bytes))
             
             input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
@@ -325,12 +325,10 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
                 </div>
             """, unsafe_allow_html=True)
             
-            # Subtle confirmation message below the thumbnail
             st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
 
         except Exception:
-            # Handle corrupted or unsupported files gracefully
-            st.warning("Uploaded file is corrupted or not a valid image. Please use the 'Clear file' button above to remove it.")
+            st.error("Uploaded file is corrupted or not a valid image. Please use the 'Clear file' button above to remove it.")
             input_image_url = None 
             st.session_state[session_state_key] = None
         
@@ -341,7 +339,7 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
 def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
     """Submits the image generation request to the FAL API."""
     if fal is None:
-        st.error("Cannot generate image: FAL service is not initialized.")
+        st.error("Cannot generate image: FAL service is not initialized. Check error message in the input column.")
         return []
 
     st.toast("Submitting Image Generation Request...")
@@ -398,7 +396,7 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
 def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
     """Submits the video generation request to the FAL API (Wan-I2V)."""
     if fal is None:
-        st.error("Cannot generate video: FAL service is not initialized.")
+        st.error("Cannot generate video: FAL service is not initialized. Check error message in the input column.")
         return None
         
     st.toast("Submitting Video Generation Request...")
@@ -435,7 +433,7 @@ def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None)
         print(f"Video Generation Failed: {e}")
         return None
 
-# --- Authentication Logic (FIXED) ---
+# --- Authentication Logic ---
 def check_video_password_callback():
     """Checks the password, updates state, and triggers a rerun if successful."""
     password_attempt = st.session_state.video_password_input
@@ -444,7 +442,7 @@ def check_video_password_callback():
         st.session_state.video_authenticated = True
         st.session_state.password_error = None
         st.balloons()
-        st.rerun() # Use st.rerun() to force the page state update
+        st.rerun() 
     else:
         st.session_state.password_error = "Incorrect password. Try again."
         st.session_state.video_authenticated = False
@@ -463,41 +461,11 @@ st.markdown("---")
 # --------------------------------------------------
 with tab_image:
     
-    # 1. ADJUSTED COLUMN WIDTH: [1.3, 1.7] for wider input area
+    # 1. COLUMN WIDTH: [1.3, 1.7] for wider input area
     col_input_img, col_output_img = st.columns([1.3, 1.7])
 
     with col_input_img:
         st.markdown("## Image Input Controls")
-        
-        # 2. GENERATE BUTTON PLACEMENT (FIXED: Prominent placement at the top, visible even if disabled)
-        final_image_seed = None 
-        
-        # Determine if the button should be disabled
-        button_disabled_reason = None
-        if not IS_FAL_READY:
-            button_disabled_reason = "AI service not initialized. Check configuration."
-            
-        if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True, disabled=(not IS_FAL_READY)):
-            if st.session_state.prompt:
-                st.session_state.image_result_urls = fal_generate_image(
-                    st.session_state.prompt, 
-                    st.session_state.negative_prompt, 
-                    st.session_state.width, 
-                    st.session_state.height, 
-                    st.session_state.num_images, 
-                    st.session_state.strength, 
-                    st.session_state.guidance_scale, 
-                    st.session_state.num_inference_steps, 
-                    final_image_seed, 
-                    input_image_url
-                )
-            else:
-                st.toast("Please enter a prompt to generate an image.") 
-
-        if button_disabled_reason:
-            st.warning(button_disabled_reason)
-
-        st.markdown("---") # Separator below the button
         
         # --- Image Upload Section ---
         input_image_url = display_image_uploader_with_thumbnail(
@@ -505,7 +473,7 @@ with tab_image:
             "Initial image for **Image-to-Image** Generation (Optional)"
         )
         
-        st.markdown("---") # Separator after the image upload
+        st.markdown("---") 
         
         # --- Prompts ---
         st.markdown("### Enter Prompts")
@@ -523,6 +491,37 @@ with tab_image:
             key="image_negative_prompt_area"
         )
         
+        # --- GENERATE BUTTON (FIXED PLACEMENT & SIZING) ---
+        st.markdown('<div style="margin-top: 20px; margin-bottom: 20px;">', unsafe_allow_html=True)
+        
+        # Check if the button should be disabled and set the error message
+        button_disabled_reason = None
+        if not IS_FAL_READY:
+            button_disabled_reason = FAL_ERROR_MESSAGE
+            
+        if st.button("✨ Generate Image", key="generate_image_button", type="primary", disabled=(not IS_FAL_READY)):
+            if st.session_state.prompt:
+                st.session_state.image_result_urls = fal_generate_image(
+                    st.session_state.prompt, 
+                    st.session_state.negative_prompt, 
+                    st.session_state.width, 
+                    st.session_state.height, 
+                    st.session_state.num_images, 
+                    st.session_state.strength, 
+                    st.session_state.guidance_scale, 
+                    st.session_state.num_inference_steps, 
+                    None, # Seed
+                    input_image_url
+                )
+            else:
+                st.toast("Please enter a prompt to generate an image.") 
+
+        if button_disabled_reason:
+            # Show a prominent error if FAL is not ready
+            st.error(f"Cannot generate: {button_disabled_reason}") 
+        st.markdown('</div>', unsafe_allow_html=True) 
+
+
         # --- Advanced Settings Expander ---
         with st.expander("⚙️ Advanced Settings"):
             st.markdown("Customize how the model generates your image.")
@@ -564,12 +563,9 @@ with tab_image:
             for i, url in enumerate(st.session_state.image_result_urls):
                 with cols[i % 3]: 
                     
-                    # Generated Image Display Block (Styled to be small via CSS)
                     st.markdown('<div class="generated-image-result">', unsafe_allow_html=True)
-                    # NOTE: use_column_width=False lets the CSS max-width override the column width.
                     st.image(url, use_column_width=False) 
                     
-                    # Link to view full size (enlargeable on click)
                     st.markdown(f'<a href="{url}" target="_blank" style="font-size: 0.85rem; color: var(--secondary-color);">View Full Size</a>', unsafe_allow_html=True)
 
                     st.button(
@@ -607,50 +603,25 @@ with tab_video:
         
         if st.session_state.password_error:
             st.error(st.session_state.password_error)
-            # Clear error after displaying it once
             st.session_state.password_error = None
 
     else:
         # If authenticated, show the video generation interface
         st.success("Access Granted! Generating videos with Wan-I2V.")
         
-        # 1. ADJUSTED COLUMN WIDTH: [1.3, 1.7] for wider input area
+        # 1. COLUMN WIDTH: [1.3, 1.7] for wider input area
         col_input_video, col_output_video = st.columns([1.3, 1.7])
 
         with col_input_video:
             st.markdown("## Video Input Controls")
             
-            # 2. GENERATE BUTTON PLACEMENT (FIXED: Prominent placement at the top, visible even if disabled)
-            final_video_seed = None 
-            
-            # Determine if the button should be disabled
-            video_button_disabled_reason = None
-            if not IS_FAL_READY:
-                video_button_disabled_reason = "AI service not initialized. Check configuration."
-                
-            if st.button("🎬 Generate Video", key="generate_video_button", type="primary", use_container_width=True, disabled=(not IS_FAL_READY)):
-                if st.session_state.video_prompt:
-                    st.session_state.video_result_url = fal_generate_video(
-                        st.session_state.video_prompt, 
-                        st.session_state.negative_prompt, 
-                        input_video_image_url, 
-                        final_video_seed
-                    )
-                else:
-                    st.toast("Please enter a prompt to generate a video.") 
-            
-            if video_button_disabled_reason:
-                st.warning(video_button_disabled_reason)
-
-            st.markdown("---") # Separator below the button
-
             # --- Image Upload Section for Video I2V ---
             input_video_image_url = display_image_uploader_with_thumbnail(
                 'video_upload_img_data',
                 "Initial image for **Image-to-Video** Generation (Optional)"
             )
 
-            st.markdown("---") # Separator after the image upload
+            st.markdown("---")
 
             # --- Prompts ---
             st.markdown("### Enter Prompts")
@@ -668,7 +639,29 @@ with tab_video:
                 key="video_negative_prompt_area"
             )
             
+            # --- GENERATE BUTTON (FIXED PLACEMENT & SIZING) ---
+            st.markdown('<div style="margin-top: 20px; margin-bottom: 20px;">', unsafe_allow_html=True)
+
+            video_button_disabled_reason = None
+            if not IS_FAL_READY:
+                video_button_disabled_reason = FAL_ERROR_MESSAGE
+                
+            if st.button("🎬 Generate Video", key="generate_video_button", type="primary", disabled=(not IS_FAL_READY)):
+                if st.session_state.video_prompt:
+                    st.session_state.video_result_url = fal_generate_video(
+                        st.session_state.video_prompt, 
+                        st.session_state.negative_prompt, 
+                        input_video_image_url, 
+                        None # Seed
+                    )
+                else:
+                    st.toast("Please enter a prompt to generate a video.") 
             
+            if video_button_disabled_reason:
+                st.error(f"Cannot generate: {video_button_disabled_reason}")
+            st.markdown('</div>', unsafe_allow_html=True) 
+
+
             # --- Advanced Settings Expander ---
             with st.expander("⚙️ Video Advanced Settings"):
                 st.markdown("Customize Wan-I2V generation.")
