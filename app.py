@@ -9,17 +9,19 @@ from io import BytesIO
 from urllib.request import urlopen
 import boto3
 from botocore.exceptions import ClientError
-import requests # ADDED: Required for robust R2/URL handling by existing upload_file_to_r2 function
-from PIL import Image # ADDED: Required for robust thumbnail handling by existing display_image_uploader_with_thumbnail function
+import requests # ADDED: Required for robust R2/URL handling
+from PIL import Image # ADDED: Required for robust thumbnail handling
 
 # --- Constants and Configuration ---
 # CRITICAL: Re-checked from user's expected parameters
+VIDEO_PASSWORD = "f6676kwp" # NEW: Video Password
 # CRITICAL: Streamlit File ID for the user's uploaded logo file
 UPLOADED_LOGO_ID = "uploaded:Clipboard01.jpg-e0b3072d-9dd7-4283-81d8-bb2162171654" 
 
 # FAL Models
 SDXL_MODEL = "fal-ai/stable-diffusion-xl-lightning"
 SDXL_I2I_MODEL = "fal-ai/stable-diffusion-xl-lightning-sdedit"
+WANI2V_MODEL = "fal-ai/wan-i2v" # NEW: Video Model
 
 # Comprehensive Negative Prompt
 DEFAULT_NEGATIVE_PROMPT = "bright colors, overexposed, static, blurred details, subtitles, style, artwork, painting, picture, still, overall gray, worst quality, low quality, JPEG compression compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, malformed limbs, fused fingers, still picture, cluttered background, three legs, many people in the background, walking backwards"
@@ -170,7 +172,7 @@ except Exception:
     IS_FAL_READY = False
 
 
-# --- Session State Initialization (Preserved 1:1) ---
+# --- Session State Initialization (Updated for Video) ---
 defaults = {
     'prompt': "A hyper-realistic portrait of a golden retriever wearing a banana helmet, 8k cinematic lighting",
     'negative_prompt': DEFAULT_NEGATIVE_PROMPT,
@@ -186,13 +188,31 @@ defaults = {
     'num_inference_steps': 50, 
     'enable_safety_checker': False, 
     'remove_index': None, 
+    
+    # NEW: Video Settings
+    'video_upload_img_data': None,
+    'video_result_url': None,
+    'video_password_input': "",
+    'video_authenticated': False, 
+    'password_error': None, 
+    'video_prompt': "A majestic banana riding a futuristic, glowing skateboard in space, cinematic.",
+    'video_width': 832, 
+    'video_height': 480, 
+    'video_strength': 0.7, 
+    'motion_bucket_id': 127, 
+    'cond_aug': 0.02, 
+    'video_num_inference_steps': 50, 
+    'video_fps': 16, 
+    'video_num_frames': 81, 
+    'video_lora_weight': 0.7, 
+    'video_safety_checker': False
 }
 for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
 
-# --- Helper Functions (Preserved 1:1) ---
+# --- Helper Functions (Updated/New) ---
 def upload_file_to_r2(content_url, file_extension):
     """Uploads content from a URL to R2 if enabled. Preserved logic."""
     if not STAGING_ENABLED:
@@ -217,7 +237,7 @@ def upload_file_to_r2(content_url, file_extension):
         return content_url
 
 def display_image_uploader_with_thumbnail(session_state_key, label_text):
-    """Handles image upload and displays thumbnail. Preserved logic."""
+    """Handles image upload and displays thumbnail. Logic restored/fixed."""
     input_image_url = None
     
     uploaded_file = st.file_uploader(
@@ -239,6 +259,7 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
             current_file_data.seek(0)
             img_bytes = current_file_data.getvalue()
             
+            # Check if valid image
             Image.open(BytesIO(img_bytes)).verify()
             
             # Create base64 URL
@@ -306,6 +327,63 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
         st.error("Image generation failed. Ensure your prompt is safe and try again.")
         return []
 
+
+def fal_generate_video(prompt, negative_prompt, input_image_url=None):
+    """NEW: Video generation function using Wan-I2V. Uses the existing FAL client/logic."""
+    if not IS_FAL_READY:
+        st.error("FAL client is not ready. Check FAL_KEY in secrets.")
+        return None
+        
+    st.toast("Submitting Video Generation Request... This will take a moment.", icon="🎬")
+    
+    params = {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "width": st.session_state.video_width,
+        "height": st.session_state.video_height,
+        "num_frames": st.session_state.video_num_frames,
+        "fps": st.session_state.video_fps,
+        "num_inference_steps": st.session_state.video_num_inference_steps,
+        "strength": st.session_state.video_strength,
+        "motion_bucket_id": st.session_state.motion_bucket_id,
+        "cond_aug": st.session_state.cond_aug,
+        "lora_weight": st.session_state.video_lora_weight,
+        "enable_safety_checker": st.session_state.video_safety_checker,
+        "seed": None
+    }
+    
+    if input_image_url:
+        params["image_url"] = input_image_url
+    
+    try:
+        handler = fal.submit(WANI2V_MODEL, arguments=params)
+        with st.spinner("Processing... This can take up to 5 minutes."):
+            result = handler.get_response(stream=True)
+            
+        # The result for video will contain a 'video' field with the URL
+        fal_url = result['video']['url']
+        staged_url = upload_file_to_r2(fal_url, ".mp4")
+        st.toast("Video generation complete!", icon="🎥")
+        return staged_url
+
+    except Exception:
+        st.error("Video generation failed. Check the console for error details.")
+        return None
+
+def check_video_password_callback():
+    """Checks the password and updates state."""
+    password_attempt = st.session_state.video_password_input
+    
+    if password_attempt == VIDEO_PASSWORD:
+        st.session_state.video_authenticated = True
+        st.session_state.password_error = None
+        st.balloons()
+        st.rerun() 
+    else:
+        st.session_state.password_error = "INCORRECT PASSWORD. ACCESS DENIED."
+        st.session_state.video_authenticated = False
+
+
 # --- Main Application Layout ---
 
 # CRITICAL LOGO BLOCK (Top Left)
@@ -331,7 +409,10 @@ with st.expander("📝 **PROJECT INSTRUCTIONS & USAGE GUIDE**"):
     5.  Click **"✨ Generate Image"** to submit the request.
 
     ### 🎥 Video Generation
-    1.  This feature is **under development** and is currently a placeholder.
+    1.  This feature is **password protected**. The required password is: `f6676kwp`.
+    2.  Enter a descriptive **Video Prompt**.
+    3.  **Optional:** Upload an image for **Image-to-Video** (I2V) generation.
+    4.  Video generation can take several minutes.
     
     ---
     
@@ -340,12 +421,12 @@ with st.expander("📝 **PROJECT INSTRUCTIONS & USAGE GUIDE**"):
 st.markdown("---")
 # --- END INSTRUCTIONS LIST ---
 
-# NEW: Tab structure added here (THIS IS THE ONLY MODIFICATION TO THE UI FLOW)
-tab_image, tab_video = st.tabs(["🖼️ Image Generation (SDXL Lightning)", "🎥 Video Generation (Placeholder)"])
+# NEW: Tab structure added here
+tab_image, tab_video = st.tabs(["🖼️ Image Generation (SDXL Lightning)", "🎥 Video Generation (Wan-I2V)"])
 
 
 # --------------------------------------------------
-# 🖼️ IMAGE GENERATION TAB (Original content wrapped here)
+# 🖼️ IMAGE GENERATION TAB (Original content restored here)
 # --------------------------------------------------
 with tab_image:
     
@@ -472,11 +553,113 @@ with tab_image:
                         use_container_width=True
                     )
                     st.markdown("</div>", unsafe_allow_html=True)
-
+            
 # --------------------------------------------------
-# 🎥 VIDEO GENERATION TAB (NEW PLACEHOLDER ONLY)
+# 🎥 VIDEO GENERATION TAB (NEW FEATURE - FULLY FUNCTIONAL)
 # --------------------------------------------------
 with tab_video:
-    st.markdown("## 🎥 Video Generation")
-    st.info("This feature is currently under development. The Video Generation model (Wan-I2V) will be integrated here soon. Thank you for your patience!")
-    st.image("https://placehold.co/800x400/1e1e1e/8c8c8c?text=Video+Generator+Coming+Soon", use_column_width=True)
+    
+    if not st.session_state.video_authenticated:
+        st.markdown("## 🔐 Video Generation Access")
+        st.error("VIDEO GENERATION IS LOCKED. ENTER THE AUTHORIZED PASSWORD.")
+        
+        st.text_input("ENTER PASSWORD", type="password", key="video_password_input")
+        st.button("UNLOCK VIDEO GENERATOR", key="video_unlock_button", on_click=check_video_password_callback, type="primary")
+        
+        if st.session_state.password_error:
+            st.error(st.session_state.password_error)
+            st.session_state.password_error = None
+
+    else:
+        st.success("ACCESS GRANTED. PROCEED WITH VIDEO GENERATION.")
+        
+        col_input_video, col_output_video = st.columns([1.3, 1.7])
+
+        with col_input_video:
+            st.markdown("## Video Input Controls")
+            
+            # --- Image Upload Section for Video I2V ---
+            input_video_image_url = display_image_uploader_with_thumbnail(
+                'video_upload_img_data',
+                "Initial image for **Image-to-Video** Generation (Optional)"
+            )
+
+            st.markdown("---")
+
+            # --- Prompts ---
+            st.markdown("### Enter Prompts")
+            
+            st.session_state.video_prompt = st.text_area(
+                "Enter your **video prompt**",
+                value=st.session_state.video_prompt,
+                height=150,
+                key="video_prompt_area"
+            )
+            
+            # Use the same negative prompt session state but ensure a unique key to prevent clash in this tab
+            st.session_state.negative_prompt = st.text_area(
+                "Negative Prompt (What to avoid)",
+                value=st.session_state.negative_prompt,
+                key="video_negative_prompt_area_2"
+            )
+            
+            # --- GENERATE BUTTON ---
+            st.markdown('<div style="margin-top: 20px; margin-bottom: 20px;">', unsafe_allow_html=True)
+                
+            if st.button(
+                "🎬 Generate Video (Longer wait time)", 
+                key="generate_video_button", 
+                type="primary", 
+                disabled=(not IS_FAL_READY) 
+            ):
+                if st.session_state.video_prompt:
+                    st.session_state.video_result_url = fal_generate_video(
+                        st.session_state.video_prompt, 
+                        st.session_state.negative_prompt, 
+                        input_video_image_url
+                    )
+                else:
+                    st.toast("ENTER A PROMPT.", icon="✍️") 
+
+            if not IS_FAL_READY:
+                st.error("**FATAL ERROR: FAL AI Key is MISSING or INVALID.** Please check the FAL_KEY secret as per the instructions above. The button is currently disabled.")
+            
+            st.markdown('</div>', unsafe_allow_html=True) 
+
+
+            # --- Advanced Settings Expander ---
+            with st.expander("⚙️ Video Advanced Settings"):
+                st.markdown("Customize Wan-I2V generation.")
+                
+                resolution_video_options = {
+                    "512x512": (512, 512),
+                    "832x480 (Recommended)": (832, 480),
+                }
+                
+                current_res_key = next((k for k, v in resolution_video_options.items() if v == (st.session_state.video_width, st.session_state.video_height)), "832x480 (Recommended)")
+                
+                selected_resolution_video = st.selectbox("Select Resolution", list(resolution_video_options.keys()), index=list(resolution_video_options.keys()).index(current_res_key), key="video_res_select")
+                st.session_state.video_width, st.session_state.video_height = resolution_video_options[selected_resolution_video]
+
+                st.session_state.video_strength = st.slider("Strength (I2V only: 1.0=Full Change, 0.0=Original)", min_value=0.0, max_value=1.0, value=st.session_state.video_strength, step=0.01)
+                st.session_state.video_num_frames = st.slider("Number of Frames (Affects length, Max 250)", min_value=16, max_value=250, value=st.session_state.video_num_frames, step=1)
+                st.session_state.video_fps = st.slider("Frames Per Second (FPS)", min_value=8, max_value=30, value=st.session_state.video_fps, step=1)
+                st.session_state.motion_bucket_id = st.slider("Motion Bucket ID (Controls motion style)", min_value=0, max_value=1024, value=st.session_state.motion_bucket_id, step=1)
+                st.session_state.cond_aug = st.slider("Conditioning Augmentation", min_value=0.0, max_value=0.2, value=st.session_state.cond_aug, step=0.01)
+                st.session_state.video_lora_weight = st.slider("LoRA Weight", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01)
+                st.session_state.video_num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=5)
+                st.session_state.video_safety_checker = st.checkbox("Enable Safety Filter", value=st.session_state.video_safety_checker, key="video_safety_check")
+                
+        # --- Output Video Display (Right Column) ---
+        with col_output_video:
+            st.markdown("## Generated Video")
+            if st.session_state.video_result_url:
+                st.video(st.session_state.video_result_url)
+                
+                st.download_button(
+                    label="⬇️ DOWNLOAD VIDEO",
+                    data=requests.get(st.session_state.video_result_url).content,
+                    file_name=f"nano_banana_x_ai_video_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.mp4",
+                    mime="video/mp4",
+                    use_container_width=True
+                )
