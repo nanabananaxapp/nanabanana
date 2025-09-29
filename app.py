@@ -14,7 +14,7 @@ from PIL import Image
 VIDEO_PASSWORD = "f6676kwp"
 
 # Comprehensive Negative Prompt
-DEFAULT_NEGATIVE_PROMPT = "bright colors, overexposed, static, blurred details, subtitles, style, artwork, painting, picture, still, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, malformed limbs, fused fingers, still picture, cluttered background, three legs, many people in the background, walking backwards"
+DEFAULT_NEGATIVE_PROMPT = "bright colors, overexposed, static, blurred details, subtitles, style, artwork, painting, picture, still, overall gray, worst quality, low quality, JPEG compression compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, malformed limbs, fused fingers, still picture, cluttered background, three legs, many people in the background, walking backwards"
 
 # FAL Models
 SDXL_MODEL = "fal-ai/stable-diffusion-xl-lightning"
@@ -40,9 +40,6 @@ st.markdown("""
       visibility: hidden;
       height: 0%;
     }
-    /* Hiding all Streamlit alert boxes/notices as requested (Success, Info, Warning, Error) 
-       NOTE: We specifically only allow st.warning for the optional video password. 
-    */
     
     /* Color Palette Variables - NANO BANANA X AI Theme */
     :root {
@@ -191,6 +188,7 @@ st.markdown("""
 
 # Initialize R2/S3 client (rest of setup remains the same)
 try:
+    # R2 keys MUST be read from environment variables, not st.secrets
     R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
     R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
     R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
@@ -213,22 +211,23 @@ except Exception as e:
     r2_client = None
     STAGING_ENABLED = False
 
-# Initialize FAL Client (FIXED ROBUSTNESS - HIDES UI ERROR MESSAGE)
+# Initialize FAL Client (FIXED LOGIC - ONLY CHECKS FOR FAL_KEY)
 try:
-    # Attempt to retrieve secrets (These must be present and valid for connection)
+    # Attempt to retrieve the single FAL key from st.secrets
     FAL_KEY = st.secrets.get("FAL_KEY")
-    FAL_SECRET = st.secrets.get("FAL_SECRET")
     
-    if FAL_KEY and FAL_SECRET:
-        fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
+    if FAL_KEY:
+        # Use the single key/token as the 'key' argument
+        fal = fal_client.client(key=FAL_KEY)
         IS_FAL_READY = True
+        print("FAL AI connection status: SUCCESS. Buttons enabled.") # Internal console logging
     else:
-        # Keys are missing from secrets, or st.secrets is not available.
+        # Key is missing from secrets
         fal = None
         IS_FAL_READY = False
-        print("FAL AI connection status: Keys missing from secrets file.")
+        print("FAL AI connection status: FAL_KEY missing from secrets file. Buttons disabled.") # Internal console logging
 except Exception as e:
-    # Connection failed for another reason (e.g., network error, invalid keys provided in the client call)
+    # Connection failed for another reason
     fal = None
     IS_FAL_READY = False
     # Print the detailed error to the console for debugging, but hide it from the user interface
@@ -238,6 +237,7 @@ except Exception as e:
 # --- Session State Initialization ---
 if 'negative_prompt' not in st.session_state: st.session_state.negative_prompt = DEFAULT_NEGATIVE_PROMPT
 if 'seed' not in st.session_state: st.session_state.seed = None 
+if 'video_password_input' not in st.session_state: st.session_state.video_password_input = "" # Initialize input field
 if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
 if 'image_upload_img_data' not in st.session_state: st.session_state.image_upload_img_data = None 
 if 'video_upload_img_data' not in st.session_state: st.session_state.video_upload_img_data = None
@@ -287,6 +287,7 @@ def upload_file_to_r2(content_url, file_extension):
             Body=response.content,
             ContentType=content_type
         )
+        # Construct the public URL using the endpoint and bucket name
         public_url = f"{R2_ENDPOINT_URL}/{R2_BUCKET_NAME}/{file_key}"
         return public_url
     except Exception as e:
@@ -321,6 +322,7 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
         try:
             current_file_data.seek(0)
             img_bytes = current_file_data.getvalue()
+            # Use Image.open to validate the image is not corrupted
             Image.open(BytesIO(img_bytes))
             
             input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
@@ -332,10 +334,11 @@ def display_image_uploader_with_thumbnail(session_state_key, label_text):
                 </div>
             """, unsafe_allow_html=True)
             
+            # Using simple text for status, not a banner
             st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
 
         except Exception as e:
-            # We must keep this error message because it relates to USER UPLOADED file corruption, not the FAL API.
+            # We must keep this error message because it relates to USER UPLOADED file corruption.
             st.error("Uploaded file is corrupted or not a valid image. Please use the 'Clear file' button above to remove it.")
             print(f"User uploaded corrupted file: {e}")
             input_image_url = None 
@@ -386,7 +389,8 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
     try:
         handler = fal.submit(model, arguments=params)
         with st.spinner("Processing... waiting for the model to finish."):
-            result = handler.get_response(stream=True)
+            # Stream=True is safe for synchronous calls, it just gives a progress indicator
+            result = handler.get_response(stream=True) 
             
         final_urls = []
         for i, image_data in enumerate(result['images']):
@@ -427,7 +431,7 @@ def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None)
         "lora_weight": st.session_state.video_lora_weight,
         "seed": seed,
         "enable_safety_checker": st.session_state.video_safety_checker,
-        "image_url": input_video_image_url
+        "image_url": input_image_url # Note: passed as function argument
     }
     
     try:
@@ -526,7 +530,6 @@ with tab_image:
             else:
                 st.toast("Please enter a prompt to generate an image.") 
 
-        # Removed the st.error display here
         st.markdown('</div>', unsafe_allow_html=True) 
 
 
@@ -593,9 +596,7 @@ with tab_image:
                         use_container_width=True
                     )
                     st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.info("Your generated images will appear here as small thumbnails (up to 3 in a row). Click 'View Full Size' to enlarge them.")
-
+        # NO BANNER / INFO TEXT HERE
             
 # --------------------------------------------------
 # 🎥 VIDEO GENERATION TAB (Second Tab)
@@ -663,7 +664,6 @@ with tab_video:
                 else:
                     st.toast("Please enter a prompt to generate a video.") 
             
-            # Removed the st.error display here
             st.markdown('</div>', unsafe_allow_html=True) 
 
 
