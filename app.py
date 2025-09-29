@@ -329,7 +329,7 @@ def fal_generate_image(prompt, negative_prompt, width, height, num_images, stren
 
 
 def fal_generate_video(prompt, negative_prompt, input_image_url=None):
-    """NEW: Video generation function using Wan-I2V."""
+    """NEW: Video generation function using Wan-I2V. Uses the existing FAL client/logic."""
     if not IS_FAL_READY:
         st.error("FAL client is not ready. Check FAL_KEY in secrets.")
         return None
@@ -360,6 +360,7 @@ def fal_generate_video(prompt, negative_prompt, input_image_url=None):
         with st.spinner("Processing... This can take up to 5 minutes."):
             result = handler.get_response(stream=True)
             
+        # The result for video will contain a 'video' field with the URL
         fal_url = result['video']['url']
         staged_url = upload_file_to_r2(fal_url, ".mp4")
         st.toast("Video generation complete!", icon="🎥")
@@ -408,7 +409,7 @@ with st.expander("📝 **PROJECT INSTRUCTIONS & USAGE GUIDE**"):
     5.  Click **"✨ Generate Image"** to submit the request.
 
     ### 🎥 Video Generation
-    1.  This feature is **password protected**. Enter the correct password to unlock it (`f6676kwp`).
+    1.  This feature is **password protected**. The required password is: `f6676kwp`.
     2.  Enter a descriptive **Video Prompt**.
     3.  **Optional:** Upload an image for **Image-to-Video** (I2V) generation.
     4.  Video generation can take several minutes.
