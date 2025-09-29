@@ -62,9 +62,8 @@ st.markdown("""
     /* Main Title/Logo Style */
     h1 {
         color: var(--primary-color);
-        text-align: center;
-        padding-top: 10px;
-        margin-bottom: 20px;
+        /* Ensure H1 in CSS doesn't override the custom HTML below */
+        text-align: inherit; 
         font-size: 2.5rem;
         font-weight: 700;
         letter-spacing: 1px;
@@ -186,7 +185,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize R2/S3 client (rest of setup remains the same)
+# Initialize R2/S3 client (R2 keys must come from os.environ, as specified)
 try:
     # R2 keys MUST be read from environment variables, not st.secrets
     R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
@@ -211,25 +210,27 @@ except Exception as e:
     r2_client = None
     STAGING_ENABLED = False
 
-# Initialize FAL Client (FIXED LOGIC - ONLY CHECKS FOR FAL_KEY)
+# Initialize FAL Client (FIXED LOGIC - CHECKING OS.ENVIRON FIRST)
+fal = None
+IS_FAL_READY = False
 try:
-    # Attempt to retrieve the single FAL key from st.secrets
-    FAL_KEY = st.secrets.get("FAL_KEY")
+    # 1. Check standard environment variables (best for platforms like this)
+    fal_key = os.environ.get("FAL_KEY")
     
-    if FAL_KEY:
-        # Use the single key/token as the 'key' argument
-        fal = fal_client.client(key=FAL_KEY)
+    # 2. Fallback: Check Streamlit secrets (if user is using secrets.toml)
+    if not fal_key and hasattr(st, 'secrets'):
+        fal_key = st.secrets.get("FAL_KEY")
+    
+    if fal_key:
+        # Connect using the single key, as confirmed by the user
+        fal = fal_client.client(key=fal_key)
         IS_FAL_READY = True
-        print("FAL AI connection status: SUCCESS. Buttons enabled.") # Internal console logging
+        print("FAL AI connection status: SUCCESS. Buttons enabled.") 
     else:
-        # Key is missing from secrets
-        fal = None
-        IS_FAL_READY = False
-        print("FAL AI connection status: FAL_KEY missing from secrets file. Buttons disabled.") # Internal console logging
+        print("FAL AI connection status: FAL_KEY not found in environment or secrets. Buttons disabled.") 
+        
 except Exception as e:
     # Connection failed for another reason
-    fal = None
-    IS_FAL_READY = False
     # Print the detailed error to the console for debugging, but hide it from the user interface
     print(f"FAL AI Service connection failed during initialization: {e}")
 
@@ -237,7 +238,7 @@ except Exception as e:
 # --- Session State Initialization ---
 if 'negative_prompt' not in st.session_state: st.session_state.negative_prompt = DEFAULT_NEGATIVE_PROMPT
 if 'seed' not in st.session_state: st.session_state.seed = None 
-if 'video_password_input' not in st.session_state: st.session_state.video_password_input = "" # Initialize input field
+if 'video_password_input' not in st.session_state: st.session_state.video_password_input = "" 
 if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
 if 'image_upload_img_data' not in st.session_state: st.session_state.image_upload_img_data = None 
 if 'video_upload_img_data' not in st.session_state: st.session_state.video_upload_img_data = None
@@ -267,7 +268,7 @@ if 'video_seed' not in st.session_state: st.session_state.video_seed = None
 if 'password_error' not in st.session_state: st.session_state.password_error = None 
 
 
-# --- Helper Functions ---
+# --- Helper Functions (Staging remains the same as it was correct) ---
 
 def upload_file_to_r2(content_url, file_extension):
     """Uploads content from a URL to R2 (Cloudflare's S3-compatible storage) if enabled."""
@@ -468,7 +469,22 @@ def check_video_password_callback():
 
 # --- Main Application Layout ---
 
-st.markdown('<h1 style="text-align: center; color: var(--primary-color); font-size: 2.5rem;">NANO BANANA X AI 🍌</h1>', unsafe_allow_html=True)
+# --- LOGO/TITLE BLOCK (Restored) ---
+# Using SVG and custom CSS to center the logo and text
+st.markdown("""
+<div style="text-align: center; margin-bottom: 30px;">
+    <!-- SVG Banana Logo -->
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#FFD700" width="60px" height="60px" style="display: block; margin: 0 auto;">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.71 13.92c-.77.16-1.55.23-2.34.23-2.4 0-4.35-1.95-4.35-4.35 0-.79.07-1.57.23-2.34l-2.09-.59c-.4.43-.63.98-.63 1.56 0 2.4 1.95 4.35 4.35 4.35.79 0 1.57-.07 2.34-.23l2.09.59c.4-.43.63-.98.63-1.56 0-2.4-1.95-4.35-4.35-4.35-.79 0-1.57.07-2.34.23L9.5 7.63c.77-.16 1.55-.23 2.34-.23 2.4 0 4.35 1.95 4.35 4.35 0 .79-.07 1.57-.23 2.34l-2.05 1.48z" fill="transparent"/>
+        <path d="M16.92 11.96c-1.39-2.19-3.72-3.69-6.38-3.69-3.9 0-7.06 3.16-7.06 7.06 0 1.97.81 3.76 2.15 5.04l-1.09.28c-1.63-1.42-2.58-3.47-2.58-5.74 0-4.42 3.58-8 8-8 2.3 0 4.46.99 6.01 2.61l-1.05.74zM7.08 11.39c-1.39 2.19-3.72 3.69-6.38 3.69-3.9 0-7.06-3.16-7.06-7.06 0-1.97.81-3.76 2.15-5.04l-1.09-.28c-1.63 1.42-2.58 3.47-2.58 5.74 0 4.42 3.58 8 8 8 2.3 0 4.46-.99 6.01-2.61l-1.05-.74z" fill="#FFD700"/>
+        <path d="M12 21c-4.97 0-9-4.03-9-9s4.03-9 9-9 9 4.03 9 9-4.03 9-9 9z" fill="transparent"/>
+        <path d="M17.16 15.65c-1.44 2.22-3.84 3.73-6.49 3.73-3.93 0-7.12-3.19-7.12-7.12 0-1.99.82-3.8 2.18-5.1l-1.09.28c-1.66 1.44-2.63 3.53-2.63 5.82 0 4.45 3.62 8.07 8.07 8.07 2.32 0 4.5-.99 6.07-2.62l-1.05-.76z" fill="#4169E1"/>
+    </svg>
+    <h1 style="color: var(--primary-color); font-size: 2.5rem; margin-top: 10px; margin-bottom: 0px;">NANO BANANA X AI</h1>
+</div>
+""", unsafe_allow_html=True)
+# --- END LOGO/TITLE BLOCK ---
+
 
 tab_image, tab_video = st.tabs(["🖼️ Image Generation", "🎥 Video Generation"])
 
