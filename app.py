@@ -4,11 +4,23 @@ import os
 import tempfile
 import json
 import datetime
+import time
 import base64
 from io import BytesIO
-from urllib.request import urlopen
+import requests
 import boto3
 from botocore.exceptions import ClientError
+from PIL import Image 
+
+# Define Constants
+VIDEO_PASSWORD = "f6676kwp"
+
+# Comprehensive Negative Prompt
+DEFAULT_NEGATIVE_PROMPT = "bright colors, overexposed, static, blurred details, subtitles, style, artwork, painting, picture, still, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, malformed limbs, fused fingers, still picture, cluttered background, three legs, many people in the background, walking backwards"
+
+# FAL Models
+SDXL_MODEL = "fal-ai/stable-diffusion-xl-lightning"
+WANI2V_MODEL = "fal-ai/wan-i2v"
 
 # --- App Configuration and Styling ---
 st.set_page_config(
@@ -17,27 +29,25 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for a dark, professional look
+# Custom CSS for the precise dark, professional look
 st.markdown("""
 <style>
-    /* Hide Streamlit UI elements */
+    /* Hide Streamlit UI elements (including headers and toolbars) */
     [data-testid="stToolbar"] {
         visibility: hidden;
         height: 0%;
         position: fixed;
     }
-    #MainMenu {
+    #MainMenu, #GithubIcon, header {
       visibility: hidden;
+      height: 0%;
     }
-    #GithubIcon {
-      visibility: hidden;
-    }
-    header {
-        visibility: hidden;
-        height: 0%;
+    /* Hiding all Streamlit alert boxes/notices as requested (Success, Info, Warning, Error) */
+    .stAlert, [data-testid="stNotification"], [data-testid="stSuccess"], [data-testid="stInfo"], [data-testid="stWarning"], [data-testid="stError"] {
+        display: none !important;
     }
 
-    /* Color Palette Variables */
+    /* Color Palette Variables - NANO BANANA X AI Theme */
     :root {
         --primary-color: #4169E1; /* Royal Blue */
         --secondary-color: #FFD700; /* Gold */
@@ -45,585 +55,631 @@ st.markdown("""
         --card-background: #1e1e1e; /* Slightly lighter for containers */
         --text-color: #e0e0e0;
         --border-color: #3a3a3a;
+        --success-color: #3CB371; /* Medium Sea Green */
     }
-    
-    /* Main App Container Styling */
+
+    /* General App Styling */
     .stApp {
         background-color: var(--background-color);
         color: var(--text-color);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-    }
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
     }
     
-    /* Button Styling */
-    .stButton>button {
-        background: linear-gradient(145deg, var(--primary-color), #3650B0);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        box-shadow: 5px 5px 10px #0a0a0a, -5px -5px 10px #2a2a2a;
-        transition: all 0.2s ease;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        padding: 12px 24px;
-        font-size: 1.1em;
-        width: 100%;
-    }
-    .stButton>button:hover {
-        background: linear-gradient(145deg, #3650B0, var(--primary-color));
-        box-shadow: 2px 2px 5px #0a0a0a, -2px -2px 5px #2a2a2a;
-        transform: translateY(-2px);
-    }
-    .stButton>button:active {
-        box-shadow: inset 2px 2px 5px #0a0a0a, inset -2px -2px 5px #2a2a2a;
-        transform: translateY(0);
-    }
-    
-    /* Input Field Styling */
-    .stTextInput>div>div>input, .stTextArea>div>div>textarea, .stNumberInput>div>input, .st-emotion-cache-1jm98w2 {
-        background-color: var(--card-background);
-        color: var(--text-color);
-        border: 1px solid var(--border-color);
-        border-radius: 10px;
-        padding: 12px;
-        transition: border-color 0.3s ease, box-shadow 0.3s ease;
-    }
-    .stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus, .stNumberInput>div>input:focus {
-        border-color: var(--secondary-color);
-        box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.3);
-    }
-    
-    /* Header and Title Styling */
-    h1, h2, h3 {
+    /* Main Title/Logo Style */
+    h1 {
         color: var(--primary-color);
         text-align: center;
-        margin-bottom: 0.5rem;
-        text-shadow: 0 0 15px rgba(65, 105, 225, 0.5);
-    }
-    h2 {
-        margin-top: 0;
+        padding-top: 10px;
+        margin-bottom: 20px;
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: 1px;
     }
     
-    /* Container/Card Styling */
-    .st-emotion-cache-1jm98w2 {
-        border-radius: 12px;
-        border: 1px solid var(--border-color);
+    /* Input Areas and Text */
+    .stTextArea label, .stTextInput label, .stFileUploader label, .stSelectbox label {
+        color: var(--text-color) !important;
+        font-weight: 600;
+    }
+    
+    /* Containers (Card Backgrounds) */
+    [data-testid*="stVerticalBlock"], [data-testid*="stExpander"] > div:first-child, [data-testid*="stForm"] {
         background-color: var(--card-background);
-        padding: 1rem;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid var(--border-color);
+        margin-bottom: 15px;
     }
     
-    /* Uploaded Image Thumbnail Styling */
-    .uploaded-image-container {
-        position: relative;
-        display: inline-block;
-        margin: 0.5rem;
-        border: 2px solid var(--border-color);
-        border-radius: 10px;
-        overflow: hidden;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    }
-    .uploaded-image-thumbnail {
-        height: 120px;
-        width: 120px;
-        object-fit: cover;
-    }
-    .uploaded-image-container:hover {
-        transform: scale(1.05);
-        box-shadow: 0 0 20px rgba(65, 105, 225, 0.5);
-    }
-    .remove-button {
-        position: absolute;
-        top: 5px;
-        right: 5px;
-        background-color: rgba(255, 0, 0, 0.8);
-        color: white;
+    /* Primary Button Style (GENERATE) */
+    .stButton[data-testid="stButton-primary"] > button {
+        background-color: var(--primary-color);
+        color: #ffffff;
+        border-radius: 8px;
         border: none;
-        border-radius: 50%;
-        width: 25px;
-        height: 25px;
-        font-weight: bold;
+        padding: 12px 20px;
         font-size: 1.1rem;
-        cursor: pointer;
-        transition: background-color 0.2s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        line-height: 1;
-        padding-bottom: 2px;
+        font-weight: 700;
+        transition: background-color 0.3s;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
-    .remove-button:hover {
-        background-color: red;
+    .stButton[data-testid="stButton-primary"] > button:hover {
+        background-color: #3457c7; /* Darker royal blue on hover */
+    }
+    
+    /* Secondary Button Style (Download/Remove) */
+    .stButton > button {
+        background-color: #333; /* Dark gray for secondary buttons */
+        color: var(--text-color);
+        border-radius: 6px;
+        border: none;
+        padding: 8px 10px;
+        font-weight: 500;
+        transition: background-color 0.3s;
+    }
+    .stButton > button:hover {
+        background-color: #555;
+    }
+    
+    /* ======================================================= */
+    /* *** FORCE SMALL UPLOADED THUMBNAIL (100x100) *** */
+    /* ======================================================= */
+    
+    /* Wrapper for the single uploaded file thumbnail (Using pure HTML/base64) */
+    .uploaded-thumbnail-wrapper {
+        margin-top: 10px;
+        margin-bottom: 5px;
+        width: 100px !important; /* Force width */
+        height: 100px !important; /* Force height */
+        overflow: hidden;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        display: block !important; 
+    }
+    /* The actual <img> tag inside the wrapper */
+    .uploaded-thumbnail-wrapper img {
+        width: 100px !important; /* Force image width */
+        height: 100px !important; /* Force image height */
+        object-fit: cover !important; /* Ensure content fills the box */
+        border-radius: 8px !important; 
+        display: block !important;
+        margin: 0 !important;
     }
 
-    .stImage img {
-        border-radius: 10px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    }
-    .image-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        justify-content: flex-start;
-        align-items: center;
-        margin-top: 1rem;
-    }
+    /* ======================================================= */
+    /* *** GENERATED IMAGE GALLERY STYLING *** */
+    /* ======================================================= */
     
-    /* Smaller banana icon style */
-    .banana-icon {
-        font-size: 2rem;
-    }
-
-    /* Warning message style */
-    .private-warning {
-        font-size: 1.2em;
-        font-weight: bold;
-        text-decoration: underline;
-    }
-    
-    /* Override Streamlit's default image container styling */
-    .st-emotion-cache-ch5d6d img {
-        border: none !important;
-        box-shadow: none !important;
-        border-radius: 0 !important;
-    }
-    
-    /* Full-page loading spinner */
-    .loading-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0, 0, 0, 0.8);
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        z-index: 1000;
-        text-align: center;
-        color: white;
-        font-size: 1.5rem;
-    }
-    
-    .spinner-icon {
-        border: 8px solid rgba(65, 105, 225, 0.3);
-        border-top: 8px solid var(--primary-color);
-        border-radius: 50%;
-        width: 60px;
-        height: 60px;
-        animation: spin 1s linear infinite;
+    /* Container for generated image results */
+    .generated-image-result {
         margin-bottom: 20px;
     }
-    
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+    /* Generated image itself */
+    .generated-image-result [data-testid="stImage"] img {
+        border-radius: 8px;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        /* Small gap adjustment for the 3-column generated grid */
+        margin-bottom: 5px; 
     }
+
 </style>
 """, unsafe_allow_html=True)
 
-
-# --- API Key and Secrets Handling ---
-def get_secret(key, default=None):
-    """Get secret from Streamlit secrets or environment variable"""
-    if hasattr(st, 'secrets') and key in st.secrets:
-        return st.secrets[key]
-    elif key in os.environ:
-        return os.environ[key]
-    return default
-
-FAL_KEY = get_secret("FAL_KEY")
-
-if not FAL_KEY:
-    st.error("❌.")
-    st.stop()
-
-fal_client.key = FAL_KEY
-
-# --- Cloudflare R2 Configuration and File Management ---
-# R2 bucket name - you can change this or keep it in secrets
-R2_BUCKET_NAME = get_secret("R2_BUCKET_NAME", "app-generations")  # Default bucket name
-
-@st.cache_resource
-def get_r2_client():
-    """
-    Creates and returns an S3 client configured for Cloudflare R2
-    using credentials from Streamlit secrets.
-    """
-    try:
-        # Check if R2 credentials exist in secrets
-        required_keys = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT_URL"]
-        missing_keys = [key for key in required_keys if key not in st.secrets]
-        
-        if missing_keys:
-            st.warning(f" {', '.join(missing_keys)}. .")
-            return None
-
-        # Create S3 client configured for R2
-        s3_client = boto3.client(
+# Initialize R2/S3 client (rest of setup remains the same)
+try:
+    R2_ENDPOINT_URL = os.environ.get('R2_ENDPOINT_URL')
+    R2_ACCESS_KEY_ID = os.environ.get('R2_ACCESS_KEY_ID')
+    R2_SECRET_ACCESS_KEY = os.environ.get('R2_SECRET_ACCESS_KEY')
+    R2_BUCKET_NAME = os.environ.get('R2_BUCKET_NAME')
+    
+    if all([R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME]):
+        r2_client = boto3.client(
             's3',
-            endpoint_url=st.secrets["R2_ENDPOINT_URL"],
-            aws_access_key_id=st.secrets["R2_ACCESS_KEY_ID"],
-            aws_secret_access_key=st.secrets["R2_SECRET_ACCESS_KEY"],
-            region_name='auto'  # R2 uses 'auto' for region
+            endpoint_url=R2_ENDPOINT_URL,
+            aws_access_key_id=R2_ACCESS_KEY_ID,
+            aws_secret_access_key=R2_SECRET_ACCESS_KEY
         )
-        
-        # Test connection by listing buckets
-        s3_client.list_buckets()
-        st.info("")
-        return s3_client
-        
-    except ClientError as e:
-        st.error(f"❌ R2 Authentication failed: {e}")
-        return None
-    except Exception as e:
-        st.error(f"❌ An error occurred while connecting to R2: {e}")
-        return None
+        STAGING_ENABLED = True
+    else:
+        r2_client = None
+        STAGING_ENABLED = False
+except Exception:
+    r2_client = None
+    STAGING_ENABLED = False
 
-
-def ensure_bucket_exists(s3_client, bucket_name):
-    """Ensures the R2 bucket exists, creates it if it doesn't."""
-    if not s3_client:
-        return False
+# Initialize FAL Client (FIX FOR TYPE ERROR)
+try:
+    # Explicitly load FAL credentials from Streamlit secrets
+    FAL_KEY = st.secrets["FAL_KEY"]
+    FAL_SECRET = st.secrets["FAL_SECRET"]
     
-    try:
-        s3_client.head_bucket(Bucket=bucket_name)
-        return True
-    except ClientError as e:
-        error_code = int(e.response['Error']['Code'])
-        if error_code == 404:
-            # Bucket doesn't exist, create it
-            try:
-                s3_client.create_bucket(Bucket=bucket_name)
-                st.info(f"{bucket_name}")
-                return True
-            except ClientError as create_error:
-                st.error(f"❌ Failed to create bucket: {create_error}")
-                return False
-        else:
-            st.error(f"❌ Error checking bucket: {e}")
-            return False
+    # Initialize the client with explicit key/secret
+    fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
+except KeyError:
+    # No need to show st.error here, the app will run with a warning instead.
+    fal = None
+except Exception as e:
+    # No need to show st.error here, the app will run with a warning instead.
+    fal = None
 
-
-def upload_to_r2(s3_client, file_path, s3_key, bucket_name, content_type=None):
-    """Uploads a file to Cloudflare R2."""
-    if not s3_client:
-        return None
-    
-    try:
-        if content_type is None:
-            import mimetypes
-            content_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
-        
-        with open(file_path, 'rb') as f:
-            s3_client.put_object(
-                Bucket=bucket_name,
-                Key=s3_key,
-                Body=f,
-                ContentType=content_type
-            )
-        return s3_key
-    except ClientError as e:
-        st.warning(f"{str(e)}")
-        return None
-
-
-def upload_bytes_to_r2(s3_client, file_bytes, s3_key, bucket_name, content_type=None):
-    """R2."""
-    if not s3_client:
-        return None
-    
-    try:
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=s3_key,
-            Body=file_bytes,
-            ContentType=content_type or 'application/octet-stream'
-        )
-        return s3_key
-    except ClientError as e:
-        st.warning(f"⚠️ Could not upload to R2: {str(e)}")
-        return None
-
-
-def save_generation(s3_client, uploaded_files, generated_image_data, generation_params):
-    """R2."""
-    if not s3_client:
-        return
-    
-    if not R2_BUCKET_NAME:
-        st.warning("⚠")
-        return
-    
-    # Ensure bucket exists
-    if not ensure_bucket_exists(s3_client, R2_BUCKET_NAME):
-        return
-    
-    try:
-        # Create the folder structure using S3 key prefixes
-        date_folder = datetime.date.today().strftime("%Y-%m-%d")
-        timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        generation_folder = f"{date_folder}/generation_{timestamp_str}"
-        
-        # Save the uploaded files
-        for uploaded_file in uploaded_files:
-            s3_key = f"{generation_folder}/uploads/{uploaded_file.name}"
-            upload_bytes_to_r2(
-                s3_client, 
-                uploaded_file.getvalue(), 
-                s3_key, 
-                R2_BUCKET_NAME,
-                content_type=uploaded_file.type
-            )
-        
-        # Save the generated images
-        for i, image_data in enumerate(generated_image_data):
-            s3_key = f"{generation_folder}/outputs/output_image_{i+1}.png"
-            upload_bytes_to_r2(
-                s3_client,
-                image_data['bytes'],
-                s3_key,
-                R2_BUCKET_NAME,
-                content_type='image/png'
-            )
-        
-        # Save the prompt and parameters as a JSON file
-        params_json = json.dumps(generation_params, indent=4)
-        s3_key = f"{generation_folder}/generation_parameters.json"
-        upload_bytes_to_r2(
-            s3_client,
-            params_json.encode('utf-8'),
-            s3_key,
-            R2_BUCKET_NAME,
-            content_type='application/json'
-        )
-        
-        st.success(f"(Folder: {generation_folder})")
-        
-    except Exception as e:
-        st.error(f"{str(e)}")
-
-
-# --- Fal AI Cache and Generation Logic ---
-@st.cache_data
-def upload_files_to_fal(uploaded_files):
-    """Caches the Fal AI URLs for uploaded files to prevent repeated uploads."""
-    uploaded_image_urls = {}
-    for uploaded_file in uploaded_files:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.type.split('/')[-1]}") as temp_file:
-            temp_file.write(uploaded_file.getvalue())
-            fal_image_url = fal_client.upload_file(temp_file.name)
-            uploaded_image_urls[f"{uploaded_file.name}_{uploaded_file.size}"] = fal_image_url
-        os.unlink(temp_file.name)
-    return uploaded_image_urls
 
 # --- Session State Initialization ---
-if 'generated_images' not in st.session_state: st.session_state.generated_images = {}
-if 'uploaded_file_objects' not in st.session_state: st.session_state.uploaded_file_objects = None
-if 'uploaded_image_urls' not in st.session_state: st.session_state.uploaded_image_urls = {}
-if 'strength' not in st.session_state: st.session_state.strength = 0.95
-if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5
+if 'negative_prompt' not in st.session_state: st.session_state.negative_prompt = DEFAULT_NEGATIVE_PROMPT
+if 'seed' not in st.session_state: st.session_state.seed = None 
+if 'video_authenticated' not in st.session_state: st.session_state.video_authenticated = False 
+if 'image_upload_img_data' not in st.session_state: st.session_state.image_upload_img_data = None 
+if 'video_upload_img_data' not in st.session_state: st.session_state.video_upload_img_data = None
+if 'prompt' not in st.session_state: st.session_state.prompt = "A hyper-realistic portrait of a golden retriever wearing a banana helmet, 8k cinematic lighting"
+if 'image_result_urls' not in st.session_state: st.session_state.image_result_urls = []
+if 'width' not in st.session_state: st.session_state.width = 1024
+if 'height' not in st.session_state: st.session_state.height = 1024
+if 'strength' not in st.session_state: st.session_state.strength = 0.95 
+if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5 
 if 'num_images' not in st.session_state: st.session_state.num_images = 1
-if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 40
-if 'seed' not in st.session_state: st.session_state.seed = None
-if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False
-if 'width' not in st.session_state: st.session_state.width = 2048
-if 'height' not in st.session_state: st.session_state.height = 2048
-if 'is_generating_clicked' not in st.session_state: st.session_state.is_generating_clicked = False
+if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 50 
+if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False 
+if 'remove_index' not in st.session_state: st.session_state.remove_index = None 
+if 'video_prompt' not in st.session_state: st.session_state.video_prompt = "A majestic banana riding a futuristic, glowing skateboard in space, cinematic."
+if 'video_result_url' not in st.session_state: st.session_state.video_result_url = None
+if 'video_width' not in st.session_state: st.session_state.video_width = 832 
+if 'video_height' not in st.session_state: st.session_state.video_height = 480 
+if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.7 
+if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127 
+if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02 
+if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 50 
+if 'video_fps' not in st.session_state: st.session_state.video_fps = 16 
+if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 81 
+if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7 
+if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False 
+if 'video_seed' not in st.session_state: st.session_state.video_seed = None 
+if 'password_error' not in st.session_state: st.session_state.password_error = None # For authentication error display
 
-# --- Main App Logic and Functions ---
 
-def generate_images():
-    """Handles the Fal AI generation process."""
+# --- Helper Functions ---
+
+def upload_file_to_r2(content_url, file_extension):
+    """Uploads content from a URL to R2 (Cloudflare's S3-compatible storage) if enabled."""
+    if not STAGING_ENABLED:
+        return content_url
     try:
-        st.session_state.generated_images = {}
-        
-        if not st.session_state.uploaded_file_objects:
-            st.error("❌ Please upload at least one image before generating.")
-            st.session_state.is_generating_clicked = False
-            return
-        
-        if not st.session_state.get('prompt', '').strip():
-            st.error("❌ Please enter a prompt before generating.")
-            st.session_state.is_generating_clicked = False
-            return
-        
-        st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
-        
-        base_prompt = " .same exact face from the original photo preserved realistically with full details. keep proportions. refine details, enhanced quality, high-definition, high-fidelity, high-resolution, DSLR quality."
-        
-        # Swapping the order of prompts
-        final_prompt = st.session_state.prompt + base_prompt
-
-        arguments = {
-            "image_urls": list(st.session_state.uploaded_image_urls.values()),
-            "prompt": final_prompt,
-            "strength": st.session_state.strength,
-            "guidance_scale": st.session_state.guidance_scale,
-            "num_images": st.session_state.num_images,
-            "num_inference_steps": st.session_state.num_inference_steps,
-            "enable_safety_checker": st.session_state.enable_safety_checker,
-            "width": st.session_state.width,
-            "height": st.session_state.height
-        }
-        
-        if st.session_state.seed is not None:
-            arguments["seed"] = int(st.session_state.seed)
-
-        response = fal_client.run(
-            "fal-ai/bytedance/seedream/v4/edit",
-            arguments=arguments
+        response = requests.get(content_url)
+        response.raise_for_status() 
+        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        file_key = f"fal_assets/{timestamp}_{os.urandom(4).hex()}{file_extension}"
+        content_type = response.headers.get('Content-Type') or (
+            'video/mp4' if file_extension == '.mp4' else 'image/jpeg'
         )
-        
-        if 'images' in response and len(response['images']) > 0:
-            image_data_with_bytes = []
-            for image in response['images']:
-                with urlopen(image['url']) as img_response:
-                    image_bytes = BytesIO(img_response.read()).getvalue()
-                    image_data_with_bytes.append({
-                        'url': image['url'],
-                        'bytes': image_bytes
-                    })
-            st.session_state.generated_images['seedream'] = image_data_with_bytes
+        r2_client.put_object(
+            Bucket=R2_BUCKET_NAME,
+            Key=file_key,
+            Body=response.content,
+            ContentType=content_type
+        )
+        public_url = f"{R2_ENDPOINT_URL}/{R2_BUCKET_NAME}/{file_key}"
+        return public_url
+    except Exception as e:
+        print(f"R2 Upload Failed: {e}") 
+        return content_url
 
-            generation_params = {
-                "timestamp": datetime.datetime.now().isoformat(),
-                "model": "Seedream 4",
-                "prompt": final_prompt,
-                "strength": st.session_state.strength,
-                "guidance_scale": st.session_state.guidance_scale,
-                "num_images": st.session_state.num_images,
-                "num_inference_steps": st.session_state.num_inference_steps,
-                "enable_safety_checker": st.session_state.enable_safety_checker,
-                "seed": st.session_state.seed,
-                "width": st.session_state.width,
-                "height": st.session_state.height,
-                "generated_urls": [img['url'] for img in image_data_with_bytes]
-            }
+def display_image_uploader_with_thumbnail(session_state_key, label_text):
+    """
+    Handles the UI for image upload using a single-file uploader.
+    The uploaded image is displayed using aggressive CSS applied via markdown 
+    to force a small, fixed-size 100x100 thumbnail.
+    """
+    input_image_url = None
+    
+    # 1. Always show the uploader widget (single file, for I2I)
+    uploaded_file = st.file_uploader(
+        label_text, 
+        type=["png", "jpg", "jpeg"],
+        key=f"uploader_{session_state_key}",
+        accept_multiple_files=False # IMPORTANT: Single file for I2I 
+    )
+    
+    # 2. Sync Session State (our persistent data storage) with Uploader State
+    if uploaded_file is not None:
+        # File is present in the uploader, update persistent storage
+        file_data = BytesIO(uploaded_file.getvalue())
+        st.session_state[session_state_key] = file_data
+    else:
+        # Uploader is empty (user clicked native Clear file), clear persistent storage
+        st.session_state[session_state_key] = None
+
+    # 3. Check persistent state to draw the tiny, forced thumbnail
+    current_file_data = st.session_state.get(session_state_key)
+    
+    if current_file_data is not None:
+        try:
+            # Read, prepare base64 URL, and reset pointer
+            current_file_data.seek(0)
+            img_bytes = current_file_data.getvalue()
+            # Check if the file is a valid image before base64 encoding
+            Image.open(BytesIO(img_bytes))
             
-            # Save to R2
-            s3_client = get_r2_client()
-            if s3_client:
-                save_generation(s3_client, st.session_state.uploaded_file_objects, image_data_with_bytes, generation_params)
-        else:
-            st.error("❌ No images were generated. Please try again.")
+            input_image_url = f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
+            
+            # Use ultra-aggressive HTML/CSS to force the 100x100 thumbnail
+            st.markdown(f"""
+                <div class="uploaded-thumbnail-wrapper">
+                    <img src="{input_image_url}" alt="Uploaded Thumbnail" />
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Subtle confirmation message below the thumbnail
+            st.markdown(f'<p style="font-size: 0.8rem; color: var(--success-color); margin-top: 0px;">Image ready for I2I Generation.</p>', unsafe_allow_html=True)
+
+        except Exception:
+            # Handle corrupted or unsupported files gracefully
+            st.warning("Uploaded file is corrupted or not a valid image. Please use the 'Clear file' button above to remove it.")
+            input_image_url = None 
+            st.session_state[session_state_key] = None
+        
+        current_file_data.seek(0) # Reset BytesIO after use
+
+    return input_image_url
+
+def fal_generate_image(prompt, negative_prompt, width, height, num_images, strength, guidance_scale, num_steps, seed, input_image_url=None):
+    """Submits the image generation request to the FAL API."""
+    if fal is None:
+        st.error("Cannot generate image: FAL service is not initialized.")
+        return []
+
+    st.toast("Submitting Image Generation Request...")
+    
+    if input_image_url:
+        model = "fal-ai/stable-diffusion-xl-lightning-sdedit"
+        params = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "width": width,
+            "height": height,
+            "num_images": num_images,
+            "image_url": input_image_url,
+            "strength": strength,
+            "guidance_scale": guidance_scale,
+            "num_inference_steps": num_steps,
+            "seed": seed, 
+            "enable_safety_checker": st.session_state.enable_safety_checker
+        }
+    else:
+        model = SDXL_MODEL
+        params = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "width": width,
+            "height": height,
+            "num_images": num_images,
+            "guidance_scale": guidance_scale,
+            "num_inference_steps": num_steps,
+            "seed": seed, 
+            "enable_safety_checker": st.session_state.enable_safety_checker
+        }
+    
+    try:
+        handler = fal.submit(model, arguments=params)
+        with st.spinner("Processing... waiting for the model to finish."):
+            result = handler.get_response(stream=True)
+            
+        final_urls = []
+        for i, image_data in enumerate(result['images']):
+            fal_url = image_data['url']
+            staged_url = upload_file_to_r2(fal_url, ".jpg")
+            final_urls.append(staged_url)
+        
+        st.toast(f"Generated {len(final_urls)} image(s) successfully!")
+        return final_urls
 
     except Exception as e:
-        st.error(f"❌ An error occurred during generation: {str(e)}")
-    finally:
-        st.session_state.is_generating_clicked = False
+        st.error("Image Generation Failed. Check the console for details.")
+        print(f"Image Generation Failed: {e}")
+        return []
 
 
-# --- UI Layout ---
-
-if st.session_state.is_generating_clicked:
-    st.markdown(f"""
-    <div class="loading-overlay">
-        <div class="spinner-icon"></div>
-        <div class="spinner-text">{"Working on your masterpiece..."}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    generate_images()
-    st.rerun()
-
-
-col_logo, col_title = st.columns([1, 5])
-with col_logo:
+def fal_generate_video(prompt, negative_prompt, input_image_url=None, seed=None):
+    """Submits the video generation request to the FAL API (Wan-I2V)."""
+    if fal is None:
+        st.error("Cannot generate video: FAL service is not initialized.")
+        return None
+        
+    st.toast("Submitting Video Generation Request...")
+    
+    params = {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "width": st.session_state.video_width,
+        "height": st.session_state.video_height,
+        "num_frames": st.session_state.video_num_frames,
+        "fps": st.session_state.video_fps,
+        "num_inference_steps": st.session_state.video_num_inference_steps,
+        "strength": st.session_state.video_strength,
+        "motion_bucket_id": st.session_state.motion_bucket_id,
+        "cond_aug": st.session_state.cond_aug,
+        "lora_weight": st.session_state.video_lora_weight,
+        "seed": seed,
+        "enable_safety_checker": st.session_state.video_safety_checker,
+        "image_url": input_image_url
+    }
+    
     try:
-        st.image("logo.png", use_container_width=True)
-    except Exception:
-        st.markdown("<div style='height: 110px;'></div>", unsafe_allow_html=True)
-with col_title:
-    st.markdown("<h1>NANO BANANA X AI</h1>", unsafe_allow_html=True)
-    st.markdown("<h2>Image to Image Generator <span class='banana-icon'>🍌</span></h2>", unsafe_allow_html=True)
+        handler = fal.submit(WANI2V_MODEL, arguments=params)
+        with st.spinner("Processing... This can take a few minutes."):
+            result = handler.get_response(stream=True)
+            
+        fal_url = result['video']['url']
+        staged_url = upload_file_to_r2(fal_url, ".mp4")
+        st.toast("Video generation complete!")
+        return staged_url
 
-st.markdown("""
-- **Upload your images:** Upload 1 - 4 images to serve as the basis for your new creation.
-- **Craft a detailed prompt:** Write a clear and descriptive prompt to guide the AI's generation process.
-- **Generate your image:** Click the 'Generate' button to begin the AI transformation.
-- **Optimize results:** For the best quality, we recommend using the default settings.
-- **Uncensored Model:** This is an uncensored model version; please use it responsibly.
-- Do not share: This is a private, unshared version of the model. To ensure low resource usage, <span class="private-warning">please do not share this website with others!</span>
-""", unsafe_allow_html=True)
+    except Exception as e:
+        st.error("Video Generation Failed. Check the console for details.")
+        print(f"Video Generation Failed: {e}")
+        return None
 
-col1, col2 = st.columns([4, 1])
-
-with col1:
-    prompt = st.text_area("🖊 Prompt", placeholder="e.g., A fantastical creature made of crystals, surrounded by a swirling nebula.", height=100)
-    st.session_state.prompt = prompt
-
-with col2:
-    st.markdown("<div style='margin-top: 2rem;'>", unsafe_allow_html=True)
-    if st.button("🚀 Generate"):
-        st.session_state.is_generating_clicked = True
-        st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
+# --- Authentication Logic (FIXED) ---
+def check_video_password_callback():
+    """Checks the password, updates state, and triggers a rerun if successful."""
+    password_attempt = st.session_state.video_password_input
     
-image_cols = st.columns([1, 1])
+    if password_attempt == VIDEO_PASSWORD:
+        st.session_state.video_authenticated = True
+        st.session_state.password_error = None
+        st.balloons()
+        st.rerun() # Use st.rerun() to force the page state update
+    else:
+        st.session_state.password_error = "Incorrect password. Try again."
+        st.session_state.video_authenticated = False
 
-with image_cols[0]:
-    uploaded_files = st.file_uploader("🖼️ Upload one or more images", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+
+# --- Main Application Layout ---
+
+st.markdown('<h1 style="text-align: center; color: var(--primary-color); font-size: 2.5rem;">NANO BANANA X AI 🍌</h1>', unsafe_allow_html=True)
+
+tab_image, tab_video = st.tabs(["🖼️ Image Generation", "🎥 Video Generation"])
+
+st.markdown("---")
+
+# --------------------------------------------------
+# 🖼️ IMAGE GENERATION TAB (First Tab)
+# --------------------------------------------------
+with tab_image:
     
-    if uploaded_files:
-        st.session_state.uploaded_file_objects = uploaded_files
-    # The fix: Do not clear uploaded_file_objects if uploaded_files is empty,
-    # as this would remove the images after the first generation.
-    # The line `st.session_state.uploaded_file_objects = []` when `uploaded_files` is empty is removed.
-    # This keeps the images visible.
+    col_input_img, col_output_img = st.columns([1, 2])
+
+    with col_input_img:
+        st.markdown("## Image Input Controls")
+        
+        # --- Image Upload Section ---
+        input_image_url = display_image_uploader_with_thumbnail(
+            'image_upload_img_data',
+            "Initial image for **Image-to-Image** Generation (Optional)"
+        )
+        
+        st.markdown("---") # Separator after the image upload
+        
+        # --- GENERATE BUTTON LOCATION (FIXED) ---
+        
+        # Use columns to place the button on the right of the header
+        header_col, button_col = st.columns([2, 1])
+
+        with header_col:
+            st.markdown("### Enter Prompts")
+
+        with button_col:
+            final_image_seed = None 
+            
+            if fal is None:
+                st.warning("Cannot connect to AI service.")
+            else:
+                # The generate button is now conveniently located here
+                if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
+                    if st.session_state.prompt:
+                        st.session_state.image_result_urls = fal_generate_image(
+                            st.session_state.prompt, 
+                            st.session_state.negative_prompt, 
+                            st.session_state.width, 
+                            st.session_state.height, 
+                            st.session_state.num_images, 
+                            st.session_state.strength, 
+                            st.session_state.guidance_scale, 
+                            st.session_state.num_inference_steps, 
+                            final_image_seed, 
+                            input_image_url
+                        )
+                    else:
+                        st.toast("Please enter a prompt to generate an image.") 
+
+        # --- Prompts ---
+        st.session_state.prompt = st.text_area(
+            "Enter your **image prompt**",
+            value=st.session_state.prompt,
+            height=150,
+            key="image_prompt_area"
+        )
+        
+        st.session_state.negative_prompt = st.text_area(
+            "Negative Prompt",
+            value=st.session_state.negative_prompt,
+            key="image_negative_prompt_area"
+        )
+        
+        # --- Advanced Settings Expander ---
+        with st.expander("⚙️ Advanced Settings"):
+            st.markdown("Customize how the model generates your image.")
+            
+            resolution_options = {
+                "512x512": (512, 512),
+                "768x768": (768, 768),
+                "1024x1024": (1024, 1024),
+                "2048x2048 (2K)": (2048, 2048),
+            }
+            current_res_key = next((k for k, v in resolution_options.items() if v == (st.session_state.width, st.session_state.height)), "1024x1024")
+            
+            selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=list(resolution_options.keys()).index(current_res_key))
+            st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
+
+            st.session_state.strength = st.slider("Strength (Image-to-Image only)", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01)
+            st.session_state.guidance_scale = st.slider("Guidance Scale (CFG)", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1)
+            st.session_state.num_images = st.slider("Number of Images to Generate", min_value=1, max_value=4, value=st.session_state.num_images)
+            st.session_state.num_inference_steps = st.slider("Inference Steps (Quality/Speed)", min_value=10, max_value=100, value=st.session_state.num_inference_steps, step=5)
+            st.session_state.enable_safety_checker = st.checkbox("Enable Safety Filter", value=st.session_state.enable_safety_checker)
+            
+
+    # --- Output Gallery (Right Column) ---
+    with col_output_img:
+        st.markdown("## Generated Images Gallery")
+        
+        # --- Image Removal Logic ---
+        if st.session_state.remove_index is not None:
+            if 0 <= st.session_state.remove_index < len(st.session_state.image_result_urls):
+                st.session_state.image_result_urls.pop(st.session_state.remove_index)
+            st.session_state.remove_index = None 
+            st.rerun() # Use rerun instead of experimental_rerun
+
+        # --- Gallery Display ---
+        if st.session_state.image_result_urls:
+            # Displays generated images in a 3-column grid
+            cols = st.columns(3) 
+            
+            for i, url in enumerate(st.session_state.image_result_urls):
+                with cols[i % 3]: 
+                    
+                    # Generated Image Display Block
+                    st.markdown('<div class="generated-image-result">', unsafe_allow_html=True)
+                    st.image(url, use_column_width=True)
+                    
+                    st.button(
+                        "❌",
+                        key=f"remove_gallery_img_btn_{i}",
+                        help="Remove this generated image from the gallery.",
+                        type="secondary",
+                        on_click=lambda index=i: st.session_state.__setitem__('remove_index', index)
+                    )
+                        
+                    st.download_button(
+                        label="⬇️ Download",
+                        data=requests.get(url).content,
+                        file_name=f"nano_banana_x_ai_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{i}.jpg",
+                        mime="image/jpeg",
+                        use_container_width=True
+                    )
+                    st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("Your generated images will appear here as small thumbnails (3 in a row).")
+
+            
+# --------------------------------------------------
+# 🎥 VIDEO GENERATION TAB (Second Tab)
+# --------------------------------------------------
+with tab_video:
     
-    if st.session_state.uploaded_file_objects:
-        st.subheader("Your Uploaded Images")
+    if not st.session_state.video_authenticated:
+        st.markdown("## 🔐 Video Generation Access")
+        st.warning("Video Generation is currently restricted. Please enter the password to access.")
         
-        images_html = "<div class='image-grid'>"
-        for uploaded_file in st.session_state.uploaded_file_objects:
-            encoded_image = base64.b64encode(uploaded_file.getvalue()).decode("utf-8")
-            images_html += f"<div class='uploaded-image-container'><img src='data:{uploaded_file.type};base64,{encoded_image}' class='uploaded-image-thumbnail'/></div>"
-        images_html += "</div>"
+        st.text_input("Enter Password", type="password", key="video_password_input")
+        st.button("Unlock Video Generator", key="video_unlock_button", on_click=check_video_password_callback)
         
-        st.markdown(images_html, unsafe_allow_html=True)
-    
-with image_cols[1]:
-    if st.session_state.get('generated_images', {}).get('seedream'):
-        st.subheader("Generated Images")
+        if st.session_state.password_error:
+            st.error(st.session_state.password_error)
+            # Clear error after displaying it once
+            st.session_state.password_error = None
+
+    else:
+        st.success("Access Granted! Generating videos with Wan-I2V.")
         
-        cols = st.columns(len(st.session_state.generated_images['seedream']))
+        col_input_video, col_output_video = st.columns([1, 2])
+
+        with col_input_video:
+            st.markdown("## Video Input Controls")
+            
+            # --- Image Upload Section for Video I2V ---
+            input_video_image_url = display_image_uploader_with_thumbnail(
+                'video_upload_img_data',
+                "Initial image for **Image-to-Video** Generation (Optional)"
+            )
+
+            st.markdown("---") # Separator after the image upload
+
+            # --- GENERATE BUTTON LOCATION (FIXED) ---
         
-        for i, image_data in enumerate(st.session_state.generated_images['seedream']):
-            with cols[i]:
-                st.image(image_data['url'], use_container_width=True)
+            # Use columns to place the button on the right of the header
+            video_header_col, video_button_col = st.columns([2, 1])
+
+            with video_header_col:
+                st.markdown("### Enter Prompts")
+
+            with video_button_col:
+                final_video_seed = None 
+                
+                if fal is None:
+                    st.warning("Cannot connect to AI service.")
+                else:
+                    if st.button("🎬 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
+                        if st.session_state.video_prompt:
+                            st.session_state.video_result_url = fal_generate_video(
+                                st.session_state.video_prompt, 
+                                st.session_state.negative_prompt, 
+                                input_video_image_url, 
+                                final_video_seed
+                            )
+                        else:
+                            st.toast("Please enter a prompt to generate a video.") 
+            
+            # --- Prompts ---
+            st.session_state.video_prompt = st.text_area(
+                "Enter your **video prompt**",
+                value=st.session_state.video_prompt,
+                height=150,
+                key="video_prompt_area"
+            )
+            
+            st.session_state.negative_prompt = st.text_area(
+                "Negative Prompt",
+                value=st.session_state.negative_prompt,
+                key="video_negative_prompt_area"
+            )
+            
+            
+            # --- Advanced Settings Expander ---
+            with st.expander("⚙️ Video Advanced Settings"):
+                st.markdown("Customize Wan-I2V generation.")
+                
+                resolution_video_options = {
+                    "512x512": (512, 512),
+                    "832x480": (832, 480), # Recommended landscape
+                }
+                
+                current_res_key = next((k for k, v in resolution_video_options.items() if v == (st.session_state.video_width, st.session_state.video_height)), "832x480")
+                
+                selected_resolution_video = st.selectbox("Select Resolution", list(resolution_video_options.keys()), index=list(resolution_video_options.keys()).index(current_res_key), key="video_res_select")
+                st.session_state.video_width, st.session_state.video_height = resolution_video_options[selected_resolution_video]
+
+                st.session_state.video_strength = st.slider("Strength (Image-to-Video only)", min_value=0.0, max_value=1.0, value=st.session_state.video_strength, step=0.01)
+                st.session_state.video_num_frames = st.slider("Number of Frames", min_value=16, max_value=250, value=st.session_state.video_num_frames, step=1)
+                st.session_state.video_fps = st.slider("Frames Per Second (FPS)", min_value=8, max_value=30, value=st.session_state.video_fps, step=1)
+                st.session_state.motion_bucket_id = st.slider("Motion Bucket ID (Controls motion strength/style)", min_value=0, max_value=1024, value=st.session_state.motion_bucket_id, step=1)
+                st.session_state.cond_aug = st.slider("Conditioning Augmentation", min_value=0.0, max_value=0.2, value=st.session_state.cond_aug, step=0.01)
+                st.session_state.video_lora_weight = st.slider("LoRA Weight", min_value=0.0, max_value=1.0, value=st.session_state.video_lora_weight, step=0.01)
+                st.session_state.video_num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=100, value=st.session_state.video_num_inference_steps, step=5)
+                st.session_state.video_safety_checker = st.checkbox("Enable Safety Filter", value=st.session_state.video_safety_checker, key="video_safety_check")
+                
+        # --- Output Video Display (Right Column) ---
+        with col_output_video:
+            st.markdown("## Generated Video")
+            if st.session_state.video_result_url:
+                st.video(st.session_state.video_result_url)
                 
                 st.download_button(
-                    label="Download",
-                    data=image_data['bytes'],
-                    file_name=f"fal-image_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.png",
-                    mime="image/png",
+                    label="⬇️ Download Video",
+                    data=requests.get(st.session_state.video_result_url).content,
+                    file_name=f"nano_banana_x_ai_video_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.mp4",
+                    mime="video/mp4",
+                    use_container_width=True
                 )
-            
-st.markdown("---")
-    
-with st.expander("⚙️ Advanced Settings"):
-    st.markdown("Customize how the model generates your image.")
-    
-    resolution_options = {
-        "512x512": (512, 512),
-        "768x768": (768, 768),
-        "1024x1024": (1024, 1024),
-        "2048x2048 (2K)": (2048, 2048),
-        "4096x4096 (4K)": (4096, 4096),
-    }
-    selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2)
-    st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
-
-    st.session_state.strength = st.slider("Strength", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01)
-    st.session_state.guidance_scale = st.slider("Guidance Scale", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1)
-    st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=10, value=st.session_state.num_images, step=1)
-    st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1)
-    seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
-    st.session_state.seed = seed_input
-    st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+            else:
+                st.info("Your generated video will appear here.")
+                
+            st.markdown("---")
+            st.warning("Video generation can be slow and may take several minutes.")
