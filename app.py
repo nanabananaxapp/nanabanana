@@ -61,11 +61,12 @@ st.markdown("""
         color: var(--text-color);
     }
     
-    /* CRITICAL LOGO POSITIONING (TOP RIGHT) - FIX */
+    /* CRITICAL LOGO POSITIONING (TOP LEFT) - FIXED 1:1 */
     .logo-container {
         position: fixed;
         top: 10px;
-        right: 10px;
+        left: 10px; /* CORRECTED: Logo now on the left */
+        right: auto; 
         width: 100px; 
         height: 100px;
         z-index: 1000;
@@ -167,22 +168,17 @@ except Exception as e:
 fal = None
 IS_FAL_READY = False
 try:
-    # 1:1 implementation from user's expected working code logic
+    # 1:1 implementation from user's expected working code logic: only check st.secrets
     fal_key = st.secrets.get("FAL_KEY")
     
     if fal_key:
         fal = fal_client.client(key=fal_key)
         IS_FAL_READY = True
+        # NOTE: Keeping this print for visibility in the console for the user
         print("FAL AI connection status: SUCCESS. Buttons enabled.") 
     else:
-        # Check environment for local testing, but primary is st.secrets
-        fal_key_env = os.environ.get("FAL_KEY")
-        if fal_key_env:
-            fal = fal_client.client(key=fal_key_env)
-            IS_FAL_READY = True
-        
-        if not IS_FAL_READY:
-            print("FAL AI connection status: FAL_KEY not found. Buttons disabled.") 
+        # NOTE: Keeping this print for visibility in the console for the user
+        print("FAL AI connection status: FAL_KEY not found in st.secrets. Buttons disabled.") 
         
 except Exception as e:
     print(f"FAL AI Service connection failed during initialization: {e}")
@@ -230,8 +226,7 @@ for key, value in defaults.items():
         st.session_state[key] = value
 
 
-# --- Helper Functions ---
-
+# --- Helper Functions (omitted for brevity, content remains the same as previous generation) ---
 def upload_file_to_r2(content_url, file_extension):
     """Uploads content from a URL to R2 if enabled."""
     if not STAGING_ENABLED:
@@ -419,7 +414,7 @@ def check_video_password_callback():
 
 # --- Main Application Layout ---
 
-# CRITICAL LOGO BLOCK (Top Right)
+# CRITICAL LOGO BLOCK (Top Left)
 st.markdown(f"""
 <div class="logo-container">
     <img src="{UPLOADED_LOGO_ID}" alt="NANO BANANA X AI Logo"/>
@@ -517,7 +512,8 @@ with tab_image:
                 st.toast("ENTER A PROMPT.", icon="✍️") 
 
         if not IS_FAL_READY:
-            st.error("**FATAL ERROR: FAL AI Key is MISSING or INVALID.** Please check the `FAL_KEY` secret as per the instructions above. The button is currently disabled.")
+            # THIS IS THE ERROR MESSAGE SECTION
+            st.error("**FATAL ERROR: FAL AI Key is MISSING or INVALID.** The code is correctly trying to use your `FAL_KEY` Streamlit Secret, but it is not available. Please verify the key is correctly set in your environment.")
 
         st.markdown('</div>', unsafe_allow_html=True) 
 
@@ -583,7 +579,6 @@ with tab_image:
                         use_container_width=True
                     )
                     st.markdown("</div>", unsafe_allow_html=True)
-        # REMOVED INFO BAR: else: st.info("Your generated images will appear here...")
             
 # --------------------------------------------------
 # 🎥 VIDEO GENERATION TAB
@@ -693,4 +688,3 @@ with tab_video:
                     mime="video/mp4",
                     use_container_width=True
                 )
-            # REMOVED INFO BAR: else: st.info("Your generated video will appear here...")
