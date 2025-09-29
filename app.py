@@ -1,8 +1,6 @@
 import streamlit as st
 import fal_client
 import os
-import tempfile
-import json
 import datetime
 import time
 import base64
@@ -104,6 +102,12 @@ st.markdown("""
     }
     .stButton[data-testid="stButton-primary"] > button:hover {
         background-color: #3457c7; /* Darker royal blue on hover */
+    }
+    /* Disabled primary button style */
+    .stButton[data-testid="stButton-primary"] > button:disabled {
+        background-color: #2a3c74; /* Darker, desaturated blue for disabled */
+        cursor: not-allowed;
+        box-shadow: none;
     }
     
     /* Secondary Button Style (Download/Remove) */
@@ -209,10 +213,13 @@ try:
     
     # Initialize the client with explicit key/secret
     fal = fal_client.client(key=FAL_KEY, secret=FAL_SECRET)
+    IS_FAL_READY = True
 except KeyError:
     fal = None
+    IS_FAL_READY = False
 except Exception as e:
     fal = None
+    IS_FAL_READY = False
 
 
 # --- Session State Initialization ---
@@ -462,28 +469,33 @@ with tab_image:
     with col_input_img:
         st.markdown("## Image Input Controls")
         
-        # 2. GENERATE BUTTON PLACEMENT (FIXED: Prominent placement at the top)
+        # 2. GENERATE BUTTON PLACEMENT (FIXED: Prominent placement at the top, visible even if disabled)
         final_image_seed = None 
         
-        if fal is None:
-            st.warning("Cannot connect to AI service.")
-        else:
-            if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True):
-                if st.session_state.prompt:
-                    st.session_state.image_result_urls = fal_generate_image(
-                        st.session_state.prompt, 
-                        st.session_state.negative_prompt, 
-                        st.session_state.width, 
-                        st.session_state.height, 
-                        st.session_state.num_images, 
-                        st.session_state.strength, 
-                        st.session_state.guidance_scale, 
-                        st.session_state.num_inference_steps, 
-                        final_image_seed, 
-                        input_image_url
-                    )
-                else:
-                    st.toast("Please enter a prompt to generate an image.") 
+        # Determine if the button should be disabled
+        button_disabled_reason = None
+        if not IS_FAL_READY:
+            button_disabled_reason = "AI service not initialized. Check configuration."
+            
+        if st.button("✨ Generate Image", key="generate_image_button", type="primary", use_container_width=True, disabled=(not IS_FAL_READY)):
+            if st.session_state.prompt:
+                st.session_state.image_result_urls = fal_generate_image(
+                    st.session_state.prompt, 
+                    st.session_state.negative_prompt, 
+                    st.session_state.width, 
+                    st.session_state.height, 
+                    st.session_state.num_images, 
+                    st.session_state.strength, 
+                    st.session_state.guidance_scale, 
+                    st.session_state.num_inference_steps, 
+                    final_image_seed, 
+                    input_image_url
+                )
+            else:
+                st.toast("Please enter a prompt to generate an image.") 
+
+        if button_disabled_reason:
+            st.warning(button_disabled_reason)
 
         st.markdown("---") # Separator below the button
         
@@ -591,7 +603,7 @@ with tab_video:
         st.warning("Video Generation is currently restricted. Please enter the password to access.")
         
         st.text_input("Enter Password", type="password", key="video_password_input")
-        st.button("Unlock Video Generator", key="video_unlock_button", on_click=check_video_password_callback)
+        st.button("Unlock Video Generator", key="video_unlock_button", on_click=check_video_password_callback, type="primary")
         
         if st.session_state.password_error:
             st.error(st.session_state.password_error)
@@ -599,6 +611,7 @@ with tab_video:
             st.session_state.password_error = None
 
     else:
+        # If authenticated, show the video generation interface
         st.success("Access Granted! Generating videos with Wan-I2V.")
         
         # 1. ADJUSTED COLUMN WIDTH: [1.3, 1.7] for wider input area
@@ -607,23 +620,28 @@ with tab_video:
         with col_input_video:
             st.markdown("## Video Input Controls")
             
-            # 2. GENERATE BUTTON PLACEMENT (FIXED: Prominent placement at the top)
+            # 2. GENERATE BUTTON PLACEMENT (FIXED: Prominent placement at the top, visible even if disabled)
             final_video_seed = None 
             
-            if fal is None:
-                st.warning("Cannot connect to AI service.")
-            else:
-                if st.button("🎬 Generate Video", key="generate_video_button", type="primary", use_container_width=True):
-                    if st.session_state.video_prompt:
-                        st.session_state.video_result_url = fal_generate_video(
-                            st.session_state.video_prompt, 
-                            st.session_state.negative_prompt, 
-                            input_video_image_url, 
-                            final_video_seed
-                        )
-                    else:
-                        st.toast("Please enter a prompt to generate a video.") 
+            # Determine if the button should be disabled
+            video_button_disabled_reason = None
+            if not IS_FAL_READY:
+                video_button_disabled_reason = "AI service not initialized. Check configuration."
+                
+            if st.button("🎬 Generate Video", key="generate_video_button", type="primary", use_container_width=True, disabled=(not IS_FAL_READY)):
+                if st.session_state.video_prompt:
+                    st.session_state.video_result_url = fal_generate_video(
+                        st.session_state.video_prompt, 
+                        st.session_state.negative_prompt, 
+                        input_video_image_url, 
+                        final_video_seed
+                    )
+                else:
+                    st.toast("Please enter a prompt to generate a video.") 
             
+            if video_button_disabled_reason:
+                st.warning(video_button_disabled_reason)
+
             st.markdown("---") # Separator below the button
 
             # --- Image Upload Section for Video I2V ---
