@@ -537,12 +537,10 @@ def generate_video():
 if st.session_state.is_generating_image:
     st.markdown('<div class="loading-overlay"><div class="spinner-icon"></div><div>Generating your image...</div></div>', unsafe_allow_html=True)
     generate_images()
-    st.rerun()
 
 if st.session_state.is_generating_video:
     st.markdown('<div class="loading-overlay"><div class="spinner-icon"></div><div>Generating your video... this may take a moment.</div></div>', unsafe_allow_html=True)
     generate_video()
-    st.rerun()
 
 # Main Header
 col_logo, col_title = st.columns([1, 5])
@@ -641,13 +639,12 @@ with tab2:
 
         v_col1, v_col2 = st.columns([4, 1])
         with v_col1:
-            st.session_state.video_prompt = st.text_area("🖊 Video Prompt", placeholder="e.g., A cinematic drone shot flying forward through the scene.", height=100, key="video_prompt_input")
-            st.session_state.video_negative_prompt = st.text_area("🖊 Negative Prompt", value=st.session_state.video_negative_prompt, height=100, key="video_neg_prompt")
+            st.text_area("🖊 Video Prompt", placeholder="e.g., A cinematic drone shot flying forward through the scene.", height=100, key="video_prompt")
+            st.text_area("🖊 Negative Prompt", height=100, key="video_negative_prompt")
         with v_col2:
             st.markdown("<div style='margin-top: 2rem;'>", unsafe_allow_html=True)
             if st.button("🎬 Generate Video"):
                 st.session_state.is_generating_video = True
-                st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
 
         v_res_col1, v_res_col2 = st.columns(2)
@@ -657,7 +654,16 @@ with tab2:
                 st.session_state.video_uploaded_file = video_file
             if st.session_state.video_uploaded_file:
                 st.subheader("Your Uploaded Image")
-                st.image(st.session_state.video_uploaded_file, use_container_width=True)
+                f = st.session_state.video_uploaded_file
+                encoded_image = base64.b64encode(f.getvalue()).decode("utf-8")
+                image_html = f"""
+                <div class='image-grid'>
+                    <div class='uploaded-image-container'>
+                        <img src='data:{f.type};base64,{encoded_image}' class='uploaded-image-thumbnail'/>
+                    </div>
+                </div>
+                """
+                st.markdown(image_html, unsafe_allow_html=True)
 
         with v_res_col2:
             if st.session_state.generated_video:
