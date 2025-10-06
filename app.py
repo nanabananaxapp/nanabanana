@@ -9,7 +9,6 @@ from io import BytesIO
 from urllib.request import urlopen
 import boto3
 from botocore.exceptions import ClientError
-import time
 
 # --- App Configuration and Styling ---
 st.set_page_config(
@@ -241,55 +240,104 @@ def get_secret(key, default=None):
 FAL_KEY = get_secret("FAL_KEY")
 
 if not FAL_KEY:
-    st.error("❌ FAL_KEY not found. Please set it in Streamlit secrets.")
+    st.error("❌.")
     st.stop()
 
-# Set the key for the fal_client
 fal_client.key = FAL_KEY
 
 # --- Cloudflare R2 Configuration and File Management ---
-R2_BUCKET_NAME = get_secret("R2_BUCKET_NAME", "app-generations")
+# R2 bucket name - you can change this or keep it in secrets
+R2_BUCKET_NAME = get_secret("R2_BUCKET_NAME", "app-generations")  # Default bucket name
 
 @st.cache_resource
 def get_r2_client():
-    """Creates and returns an S3 client configured for Cloudflare R2."""
+    """
+    Creates and returns an S3 client configured for Cloudflare R2
+    using credentials from Streamlit secrets.
+    """
     try:
+        # Check if R2 credentials exist in secrets
         required_keys = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT_URL"]
-        if any(key not in st.secrets for key in required_keys):
-            st.warning("R2 credentials not found in secrets. R2 upload will be disabled.")
+        missing_keys = [key for key in required_keys if key not in st.secrets]
+        
+        if missing_keys:
+            st.warning(f" {', '.join(missing_keys)}. .")
             return None
 
+        # Create S3 client configured for R2
         s3_client = boto3.client(
             's3',
             endpoint_url=st.secrets["R2_ENDPOINT_URL"],
             aws_access_key_id=st.secrets["R2_ACCESS_KEY_ID"],
             aws_secret_access_key=st.secrets["R2_SECRET_ACCESS_KEY"],
-            region_name='auto'
+            region_name='auto'  # R2 uses 'auto' for region
         )
-        s3_client.list_buckets() # Test connection
+        
+        # Test connection by listing buckets
+        s3_client.list_buckets()
+        st.info("")
         return s3_client
+        
+    except ClientError as e:
+        st.error(f"❌ R2 Authentication failed: {e}")
+        return None
     except Exception as e:
-        st.error(f"❌ R2 connection failed: {e}")
+        st.error(f"❌ An error occurred while connecting to R2: {e}")
         return None
 
+
 def ensure_bucket_exists(s3_client, bucket_name):
-    """Ensures the R2 bucket exists."""
-    if not s3_client: return False
+    """Ensures the R2 bucket exists, creates it if it doesn't."""
+    if not s3_client:
+        return False
+    
     try:
         s3_client.head_bucket(Bucket=bucket_name)
         return True
-    except ClientError:
-        try:
-            s3_client.create_bucket(Bucket=bucket_name)
-            st.info(f"Created R2 bucket: {bucket_name}")
-            return True
-        except ClientError as create_error:
-            st.error(f"❌ Failed to create bucket: {create_error}")
+    except ClientError as e:
+        error_code = int(e.response['Error']['Code'])
+        if error_code == 404:
+            # Bucket doesn't exist, create it
+            try:
+                s3_client.create_bucket(Bucket=bucket_name)
+                st.info(f"{bucket_name}")
+                return True
+            except ClientError as create_error:
+                st.error(f"❌ Failed to create bucket: {create_error}")
+                return False
+        else:
+            st.error(f"❌ Error checking bucket: {e}")
             return False
 
+
+def upload_to_r2(s3_client, file_path, s3_key, bucket_name, content_type=None):
+    """Uploads a file to Cloudflare R2."""
+    if not s3_client:
+        return None
+    
+    try:
+        if content_type is None:
+            import mimetypes
+            content_type = mimetypes.guess_type(file_path)[0] or 'application/octet-stream'
+        
+        with open(file_path, 'rb') as f:
+            s3_client.put_object(
+                Bucket=bucket_name,
+                Key=s3_key,
+                Body=f,
+                ContentType=content_type
+            )
+        return s3_key
+    except ClientError as e:
+        st.warning(f"{str(e)}")
+        return None
+
+
 def upload_bytes_to_r2(s3_client, file_bytes, s3_key, bucket_name, content_type=None):
-    """Uploads bytes to R2."""
-    if not s3_client: return None
+    """R2."""
+    if not s3_client:
+        return None
+    
     try:
         s3_client.put_object(
             Bucket=bucket_name,
@@ -302,124 +350,118 @@ def upload_bytes_to_r2(s3_client, file_bytes, s3_key, bucket_name, content_type=
         st.warning(f"⚠️ Could not upload to R2: {str(e)}")
         return None
 
-# --- R2 Save Functions ---
-def save_image_generation(s3_client, uploaded_files, generated_image_data, generation_params):
-    """Saves image generation artifacts to R2."""
-    if not s3_client or not R2_BUCKET_NAME or not ensure_bucket_exists(s3_client, R2_BUCKET_NAME):
+
+def save_generation(s3_client, uploaded_files, generated_image_data, generation_params):
+    """R2."""
+    if not s3_client:
         return
-    try:
-        timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        generation_folder = f"{datetime.date.today():%Y-%m-%d}/image_generation_{timestamp_str}"
-        
-        for uploaded_file in uploaded_files:
-            s3_key = f"{generation_folder}/uploads/{uploaded_file.name}"
-            upload_bytes_to_r2(s3_client, uploaded_file.getvalue(), s3_key, R2_BUCKET_NAME, uploaded_file.type)
-        
-        for i, image_data in enumerate(generated_image_data):
-            s3_key = f"{generation_folder}/outputs/output_image_{i+1}.png"
-            upload_bytes_to_r2(s3_client, image_data['bytes'], s3_key, R2_BUCKET_NAME, 'image/png')
-        
-        params_json = json.dumps(generation_params, indent=4)
-        s3_key = f"{generation_folder}/generation_parameters.json"
-        upload_bytes_to_r2(s3_client, params_json.encode('utf-8'), s3_key, R2_BUCKET_NAME, 'application/json')
-        
-        st.success(f"Image generation saved to R2 (Folder: {generation_folder})")
-    except Exception as e:
-        st.error(f"Error saving image generation to R2: {str(e)}")
-
-def save_video_generation(s3_client, uploaded_file, generated_video_data, generation_params):
-    """Saves video generation artifacts to R2."""
-    if not s3_client or not R2_BUCKET_NAME or not ensure_bucket_exists(s3_client, R2_BUCKET_NAME):
+    
+    if not R2_BUCKET_NAME:
+        st.warning("⚠")
         return
-    try:
-        timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        generation_folder = f"{datetime.date.today():%Y-%m-%d}/video_generation_{timestamp_str}"
-
-        s3_key_upload = f"{generation_folder}/upload/{uploaded_file.name}"
-        upload_bytes_to_r2(s3_client, uploaded_file.getvalue(), s3_key_upload, R2_BUCKET_NAME, uploaded_file.type)
-
-        s3_key_output = f"{generation_folder}/output/output_video.mp4"
-        upload_bytes_to_r2(s3_client, generated_video_data['bytes'], s3_key_output, R2_BUCKET_NAME, 'video/mp4')
-        
-        params_json = json.dumps(generation_params, indent=4)
-        s3_key_params = f"{generation_folder}/generation_parameters.json"
-        upload_bytes_to_r2(s3_client, params_json.encode('utf-8'), s3_key_params, R2_BUCKET_NAME, 'application/json')
-        
-        st.success(f"Video generation saved to R2 (Folder: {generation_folder})")
-    except Exception as e:
-        st.error(f"Error saving video generation to R2: {str(e)}")
-
-
-# --- Fal AI Upload Logic ---
-@st.cache_data(ttl=3600) # Cache for 1 hour
-def upload_file_to_fal(uploaded_file):
-    """Uploads a single file to Fal AI and returns its URL."""
-    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as temp_file:
-        temp_file.write(uploaded_file.getvalue())
-        temp_path = temp_file.name
+    
+    # Ensure bucket exists
+    if not ensure_bucket_exists(s3_client, R2_BUCKET_NAME):
+        return
     
     try:
-        fal_url = fal_client.upload_file(temp_path)
-    finally:
-        os.unlink(temp_path) # Clean up temp file
-    return fal_url
+        # Create the folder structure using S3 key prefixes
+        date_folder = datetime.date.today().strftime("%Y-%m-%d")
+        timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        generation_folder = f"{date_folder}/generation_{timestamp_str}"
+        
+        # Save the uploaded files
+        for uploaded_file in uploaded_files:
+            s3_key = f"{generation_folder}/uploads/{uploaded_file.name}"
+            upload_bytes_to_r2(
+                s3_client, 
+                uploaded_file.getvalue(), 
+                s3_key, 
+                R2_BUCKET_NAME,
+                content_type=uploaded_file.type
+            )
+        
+        # Save the generated images
+        for i, image_data in enumerate(generated_image_data):
+            s3_key = f"{generation_folder}/outputs/output_image_{i+1}.png"
+            upload_bytes_to_r2(
+                s3_client,
+                image_data['bytes'],
+                s3_key,
+                R2_BUCKET_NAME,
+                content_type='image/png'
+            )
+        
+        # Save the prompt and parameters as a JSON file
+        params_json = json.dumps(generation_params, indent=4)
+        s3_key = f"{generation_folder}/generation_parameters.json"
+        upload_bytes_to_r2(
+            s3_client,
+            params_json.encode('utf-8'),
+            s3_key,
+            R2_BUCKET_NAME,
+            content_type='application/json'
+        )
+        
+        st.success(f"(Folder: {generation_folder})")
+        
+    except Exception as e:
+        st.error(f"{str(e)}")
+
+
+# --- Fal AI Cache and Generation Logic ---
+@st.cache_data
+def upload_files_to_fal(uploaded_files):
+    """Caches the Fal AI URLs for uploaded files to prevent repeated uploads."""
+    uploaded_image_urls = {}
+    for uploaded_file in uploaded_files:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.type.split('/')[-1]}") as temp_file:
+            temp_file.write(uploaded_file.getvalue())
+            fal_image_url = fal_client.upload_file(temp_file.name)
+            uploaded_image_urls[f"{uploaded_file.name}_{uploaded_file.size}"] = fal_image_url
+        os.unlink(temp_file.name)
+    return uploaded_image_urls
 
 # --- Session State Initialization ---
-# General
-if 'is_generating_image' not in st.session_state: st.session_state.is_generating_image = False
-if 'is_generating_video' not in st.session_state: st.session_state.is_generating_video = False
-
-# Image Generation State
 if 'generated_images' not in st.session_state: st.session_state.generated_images = {}
 if 'uploaded_file_objects' not in st.session_state: st.session_state.uploaded_file_objects = None
+if 'uploaded_image_urls' not in st.session_state: st.session_state.uploaded_image_urls = {}
 if 'strength' not in st.session_state: st.session_state.strength = 0.95
 if 'guidance_scale' not in st.session_state: st.session_state.guidance_scale = 4.5
 if 'num_images' not in st.session_state: st.session_state.num_images = 1
 if 'num_inference_steps' not in st.session_state: st.session_state.num_inference_steps = 40
 if 'seed' not in st.session_state: st.session_state.seed = None
 if 'enable_safety_checker' not in st.session_state: st.session_state.enable_safety_checker = False
-if 'width' not in st.session_state: st.session_state.width = 1024
-if 'height' not in st.session_state: st.session_state.height = 1024
-
-# Video Generation State
-if 'video_auth_ok' not in st.session_state: st.session_state.video_auth_ok = False
-if 'video_uploaded_file' not in st.session_state: st.session_state.video_uploaded_file = None
-if 'generated_video' not in st.session_state: st.session_state.generated_video = None
-if 'video_prompt' not in st.session_state: st.session_state.video_prompt = ""
-if 'video_negative_prompt' not in st.session_state: st.session_state.video_negative_prompt = "bright colors, overexposed, static, blurred details, subtitles, style, artwork, painting, picture, still, overall gray, worst quality, low quality, JPEG compression compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, malformed limbs, fused fingers, still picture, cluttered background, three legs, many people in the background, walking backwards"
-if 'video_width' not in st.session_state: st.session_state.video_width = 832
-if 'video_height' not in st.session_state: st.session_state.video_height = 480
-if 'video_num_frames' not in st.session_state: st.session_state.video_num_frames = 81
-if 'video_fps' not in st.session_state: st.session_state.video_fps = 16
-if 'video_num_inference_steps' not in st.session_state: st.session_state.video_num_inference_steps = 40
-if 'video_strength' not in st.session_state: st.session_state.video_strength = 0.7
-if 'motion_bucket_id' not in st.session_state: st.session_state.motion_bucket_id = 127
-if 'cond_aug' not in st.session_state: st.session_state.cond_aug = 0.02
-if 'video_lora_weight' not in st.session_state: st.session_state.video_lora_weight = 0.7
-if 'video_safety_checker' not in st.session_state: st.session_state.video_safety_checker = False
-if 'video_seed' not in st.session_state: st.session_state.video_seed = None
-
+if 'width' not in st.session_state: st.session_state.width = 2048
+if 'height' not in st.session_state: st.session_state.height = 2048
+if 'is_generating_clicked' not in st.session_state: st.session_state.is_generating_clicked = False
 
 # --- Main App Logic and Functions ---
 
 def generate_images():
-    """Handles the Fal AI image generation process."""
+    """Handles the Fal AI generation process."""
     try:
         st.session_state.generated_images = {}
+        
         if not st.session_state.uploaded_file_objects:
             st.error("❌ Please upload at least one image before generating.")
+            st.session_state.is_generating_clicked = False
             return
+        
         if not st.session_state.get('prompt', '').strip():
             st.error("❌ Please enter a prompt before generating.")
+            st.session_state.is_generating_clicked = False
             return
-
-        uploaded_image_urls = [upload_file_to_fal(f) for f in st.session_state.uploaded_file_objects]
+        
+        st.session_state.uploaded_image_urls = upload_files_to_fal(st.session_state.uploaded_file_objects)
         
         base_prompt = " .same exact face from the original photo preserved realistically with full details. keep proportions. refine details, enhanced quality, high-definition, high-fidelity, high-resolution, DSLR quality."
+        
+        # Swapping the order of prompts
         final_prompt = st.session_state.prompt + base_prompt
 
         arguments = {
-            "image_urls": uploaded_image_urls,
+            "image_urls": list(st.session_state.uploaded_image_urls.values()),
             "prompt": final_prompt,
             "strength": st.session_state.strength,
             "guidance_scale": st.session_state.guidance_scale,
@@ -427,122 +469,69 @@ def generate_images():
             "num_inference_steps": st.session_state.num_inference_steps,
             "enable_safety_checker": st.session_state.enable_safety_checker,
             "width": st.session_state.width,
-            "height": st.session_state.height,
-            "seed": int(st.session_state.seed) if st.session_state.seed else None
+            "height": st.session_state.height
         }
-
-        response = fal_client.run("fal-ai/bytedance/seedream/v4/edit", arguments=arguments)
         
-        if 'images' in response and response['images']:
+        if st.session_state.seed is not None:
+            arguments["seed"] = int(st.session_state.seed)
+
+        response = fal_client.run(
+            "fal-ai/bytedance/seedream/v4/edit",
+            arguments=arguments
+        )
+        
+        if 'images' in response and len(response['images']) > 0:
             image_data_with_bytes = []
             for image in response['images']:
                 with urlopen(image['url']) as img_response:
                     image_bytes = BytesIO(img_response.read()).getvalue()
-                    image_data_with_bytes.append({'url': image['url'], 'bytes': image_bytes})
+                    image_data_with_bytes.append({
+                        'url': image['url'],
+                        'bytes': image_bytes
+                    })
             st.session_state.generated_images['seedream'] = image_data_with_bytes
 
-            generation_params = {k: v for k, v in arguments.items() if k != "image_urls"}
-            generation_params.update({
+            generation_params = {
                 "timestamp": datetime.datetime.now().isoformat(),
                 "model": "Seedream 4",
+                "prompt": final_prompt,
+                "strength": st.session_state.strength,
+                "guidance_scale": st.session_state.guidance_scale,
+                "num_images": st.session_state.num_images,
+                "num_inference_steps": st.session_state.num_inference_steps,
+                "enable_safety_checker": st.session_state.enable_safety_checker,
+                "seed": st.session_state.seed,
+                "width": st.session_state.width,
+                "height": st.session_state.height,
                 "generated_urls": [img['url'] for img in image_data_with_bytes]
-            })
+            }
             
+            # Save to R2
             s3_client = get_r2_client()
             if s3_client:
-                save_image_generation(s3_client, st.session_state.uploaded_file_objects, image_data_with_bytes, generation_params)
+                save_generation(s3_client, st.session_state.uploaded_file_objects, image_data_with_bytes, generation_params)
         else:
             st.error("❌ No images were generated. Please try again.")
-    except Exception as e:
-        st.error(f"❌ An error occurred during image generation: {str(e)}")
-    finally:
-        st.session_state.is_generating_image = False
-
-
-def generate_video():
-    """Handles the Fal AI video generation process."""
-    try:
-        st.session_state.generated_video = None
-        if not st.session_state.video_uploaded_file:
-            st.error("❌ Please upload an image for video generation.")
-            return
-        if not st.session_state.video_prompt.strip():
-            st.error("❌ Please enter a prompt for video generation.")
-            return
-
-        image_url = upload_file_to_fal(st.session_state.video_uploaded_file)
-        
-        payload = {
-            "prompt": st.session_state.video_prompt,
-            "image_url": image_url,
-            "negative_prompt": st.session_state.video_negative_prompt,
-            "width": st.session_state.video_width,
-            "height": st.session_state.video_height,
-            "num_frames": st.session_state.video_num_frames,
-            "fps": st.session_state.video_fps,
-            "num_inference_steps": st.session_state.video_num_inference_steps,
-            "strength": st.session_state.video_strength,
-            "motion_bucket_id": st.session_state.motion_bucket_id,
-            "cond_aug": st.session_state.cond_aug,
-            "lora_weight": st.session_state.video_lora_weight,
-            "enable_safety_checker": st.session_state.video_safety_checker,
-            "seed": int(st.session_state.video_seed) if st.session_state.video_seed else None
-        }
-
-        handler = fal_client.submit("fal-ai/wan-i2v", arguments=payload)
-        
-        # Stream logs while waiting
-        progress_bar = st.progress(0, text="Job submitted... waiting for logs.")
-        logs = []
-        for i, log in enumerate(handler.iter_logs(stream=True)):
-            if 'message' in log:
-                logs.append(log['message'])
-                progress_text = f"Generating... ({log['message']})"
-                # Update progress bar - this is a rough estimation
-                progress_value = min(i / (st.session_state.video_num_inference_steps * 1.5), 1.0) # Heuristic
-                progress_bar.progress(progress_value, text=progress_text)
-        
-        progress_bar.progress(1.0, text="Finalizing video...")
-        result = handler.get()
-        progress_bar.empty()
-
-        if result and result.get('video') and result['video'].get('url'):
-            video_url = result['video']['url']
-            with urlopen(video_url) as video_response:
-                video_bytes = video_response.read()
-            st.session_state.generated_video = {'url': video_url, 'bytes': video_bytes}
-
-            generation_params = {k: v for k, v in payload.items() if k != "image_url"}
-            generation_params.update({
-                "timestamp": datetime.datetime.now().isoformat(),
-                "model": "fal-ai/wan-i2v",
-                "generated_url": video_url
-            })
-
-            s3_client = get_r2_client()
-            if s3_client:
-                save_video_generation(s3_client, st.session_state.video_uploaded_file, st.session_state.generated_video, generation_params)
-        else:
-            st.error("❌ Video generation failed or returned no result.")
-            st.json(result) # Show the raw response for debugging
 
     except Exception as e:
-        st.error(f"❌ An error occurred during video generation: {str(e)}")
+        st.error(f"❌ An error occurred during generation: {str(e)}")
     finally:
-        st.session_state.is_generating_video = False
+        st.session_state.is_generating_clicked = False
+
 
 # --- UI Layout ---
 
-# Handle loading overlays
-if st.session_state.is_generating_image:
-    st.markdown('<div class="loading-overlay"><div class="spinner-icon"></div><div>Generating your image...</div></div>', unsafe_allow_html=True)
+if st.session_state.is_generating_clicked:
+    st.markdown(f"""
+    <div class="loading-overlay">
+        <div class="spinner-icon"></div>
+        <div class="spinner-text">{"Working on your masterpiece..."}</div>
+    </div>
+    """, unsafe_allow_html=True)
     generate_images()
+    st.rerun()
 
-if st.session_state.is_generating_video:
-    st.markdown('<div class="loading-overlay"><div class="spinner-icon"></div><div>Generating your video... this may take a moment.</div></div>', unsafe_allow_html=True)
-    generate_video()
 
-# Main Header
 col_logo, col_title = st.columns([1, 5])
 with col_logo:
     try:
@@ -551,153 +540,122 @@ with col_logo:
         st.markdown("<div style='height: 110px;'></div>", unsafe_allow_html=True)
 with col_title:
     st.markdown("<h1>NANO BANANA X AI</h1>", unsafe_allow_html=True)
-    st.markdown("<h2>Generative AI Suite <span class='banana-icon'>🍌</span></h2>", unsafe_allow_html=True)
+    st.markdown("<h2>Image to Image Generator <span class='banana-icon'>🍌</span></h2>", unsafe_allow_html=True)
 
-# Tabs
-tab1, tab2 = st.tabs(["Image Generation", "Video Generation"])
+st.markdown("""
+- **Upload your images:** Upload 1 - 4 images to serve as the basis for your new creation.
+- **Craft a detailed prompt:** Write a clear and descriptive prompt to guide the AI's generation process.
+- **Generate your image:** Click the 'Generate' button to begin the AI transformation.
+- **Optimize results:** For the best quality, we recommend using the default settings.
+- **Uncensored Model:** This is an uncensored model version; please use it responsibly.
+- Do not share: This is a private, unshared version of the model. To ensure low resource usage, <span class="private-warning">please do not share this website with others!</span>
+""", unsafe_allow_html=True)
 
-# --- Image Generation Tab ---
-with tab1:
-    st.markdown("""
-    - **Upload your images:** Upload 1 - 4 images to serve as the basis for your new creation.
-    - **Craft a detailed prompt:** Write a clear and descriptive prompt to guide the AI's generation process.
-    - **Generate your image:** Click the 'Generate' button to begin the AI transformation.
-    - **Uncensored Model:** This is an uncensored model version; please use it responsibly.
-    - **Private Use:** <span class="private-warning">Please do not share this website with others!</span>
-    """, unsafe_allow_html=True)
+col1, col2 = st.columns([4, 1])
 
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.session_state.prompt = st.text_area("🖊 Prompt", placeholder="e.g., A fantastical creature made of crystals, surrounded by a swirling nebula.", height=100, key="image_prompt")
-    with col2:
-        st.markdown("<div style='margin-top: 2rem;'>", unsafe_allow_html=True)
-        if st.button("🚀 Generate Image"):
-            st.session_state.is_generating_image = True
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-    image_cols = st.columns(2)
-    with image_cols[0]:
-        uploaded_files = st.file_uploader("🖼️ Upload one or more images", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="image_uploader")
-        if uploaded_files:
-            st.session_state.uploaded_file_objects = uploaded_files
-        
-        if st.session_state.uploaded_file_objects:
-            st.subheader("Your Uploaded Images")
-            images_html = "<div class='image-grid'>"
-            for f in st.session_state.uploaded_file_objects:
-                encoded_image = base64.b64encode(f.getvalue()).decode("utf-8")
-                images_html += f"<div class='uploaded-image-container'><img src='data:{f.type};base64,{encoded_image}' class='uploaded-image-thumbnail'/></div>"
-            images_html += "</div>"
-            st.markdown(images_html, unsafe_allow_html=True)
+with col1:
+    prompt = st.text_area("🖊 Prompt", placeholder="e.g., A fantastical creature made of crystals, surrounded by a swirling nebula.", height=100)
+    st.session_state.prompt = prompt
+
+with col2:
+    st.markdown("<div style='margin-top: 2rem;'>", unsafe_allow_html=True)
+    if st.button("🚀 Generate"):
+        st.session_state.is_generating_clicked = True
+        st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
     
-    with image_cols[1]:
-        if st.session_state.get('generated_images', {}).get('seedream'):
-            st.subheader("Generated Images")
-            cols = st.columns(len(st.session_state.generated_images['seedream']))
-            for i, image_data in enumerate(st.session_state.generated_images['seedream']):
-                with cols[i]:
-                    st.image(image_data['url'], use_container_width=True)
-                    st.download_button(
-                        label="Download", data=image_data['bytes'],
-                        file_name=f"fal-image_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.png", mime="image/png"
-                    )
-            
-    st.markdown("---")
-    with st.expander("⚙️ Advanced Image Settings"):
-        resolution_options = {"512x512": (512, 512), "768x768": (768, 768), "1024x1024": (1024, 1024), "2048x2048 (2K)": (2048, 2048)}
-        selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2, key="image_res")
-        st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
-        st.session_state.strength = st.slider("Strength", 0.0, 1.0, st.session_state.strength, 0.01, key="image_strength")
-        st.session_state.guidance_scale = st.slider("Guidance Scale", 1.0, 15.0, st.session_state.guidance_scale, 0.1, key="image_guidance")
-        st.session_state.num_images = st.slider("Number of Images", 1, 10, st.session_state.num_images, 1, key="image_num")
-        st.session_state.num_inference_steps = st.slider("Inference Steps", 10, 150, st.session_state.num_inference_steps, 1, key="image_steps")
-        st.session_state.seed = st.number_input("Seed (Optional)", value=None, step=1, format="%d", key="image_seed")
-        st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", st.session_state.enable_safety_checker, key="image_safety")
+image_cols = st.columns([1, 1])
 
-# --- Video Generation Tab ---
-with tab2:
-    VIDEO_PASSWORD = get_secret("VIDEO_PASSWORD")
-
-    if not VIDEO_PASSWORD:
-        st.error("Video Password not set. Please configure the `VIDEO_PASSWORD` secret to enable this feature.")
-    elif not st.session_state.video_auth_ok:
-        st.subheader("🔒 Access Required")
-        password = st.text_input("Enter password to access Video Generation:", type="password")
-        if st.button("Unlock"):
-            if password == VIDEO_PASSWORD:
-                st.session_state.video_auth_ok = True
-                st.rerun()
-            else:
-                st.error("Incorrect password.")
-    else:
-        st.markdown("""
-        - **Upload an image:** This will be the starting frame and guide for the video.
-        - **Write a prompt:** Describe the motion or transformation you want to see.
-        - **Generate:** Click the button to create your video. This can take several minutes.
-        """, unsafe_allow_html=True)
-
-        v_col1, v_col2 = st.columns([4, 1])
-        with v_col1:
-            st.text_area("🖊 Video Prompt", placeholder="e.g., A cinematic drone shot flying forward through the scene.", height=100, key="video_prompt")
-            st.text_area("🖊 Negative Prompt", height=100, key="video_negative_prompt")
-        with v_col2:
-            st.markdown("<div style='margin-top: 2rem;'>", unsafe_allow_html=True)
-            if st.button("🎬 Generate Video"):
-                st.session_state.is_generating_video = True
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        v_res_col1, v_res_col2 = st.columns(2)
-        with v_res_col1:
-            video_file = st.file_uploader("🖼️ Upload an image for the video", type=["png", "jpg", "jpeg", "webp"], key="video_uploader")
-            if video_file:
-                st.session_state.video_uploaded_file = video_file
-            if st.session_state.video_uploaded_file:
-                st.subheader("Your Uploaded Image")
-                f = st.session_state.video_uploaded_file
-                encoded_image = base64.b64encode(f.getvalue()).decode("utf-8")
-                image_html = f"""
-                <div class='image-grid'>
-                    <div class='uploaded-image-container'>
-                        <img src='data:{f.type};base64,{encoded_image}' class='uploaded-image-thumbnail'/>
-                    </div>
-                </div>
-                """
-                st.markdown(image_html, unsafe_allow_html=True)
-
-        with v_res_col2:
-            if st.session_state.generated_video:
-                st.subheader("Generated Video")
-                st.video(st.session_state.generated_video['url'])
-                st.download_button(
-                    label="Download Video", data=st.session_state.generated_video['bytes'],
-                    file_name=f"fal-video_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.mp4", mime="video/mp4"
-                )
+with image_cols[0]:
+    uploaded_files = st.file_uploader("🖼️ Upload one or more images", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+    
+    if uploaded_files:
+        st.session_state.uploaded_file_objects = uploaded_files
+    # The fix: Do not clear uploaded_file_objects if uploaded_files is empty,
+    # as this would remove the images after the first generation.
+    # The line `st.session_state.uploaded_file_objects = []` when `uploaded_files` is empty is removed.
+    # This keeps the images visible.
+    
+    if st.session_state.uploaded_file_objects:
+        st.subheader("Your Uploaded Images")
         
-        st.markdown("---")
-        with st.expander("⚙️ Advanced Video Settings"):
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                video_resolution_options = {
-                    "832x480 (Landscape)": (832, 480),
-                    "480x832 (Portrait)": (480, 832),
-                    "576x1024 (Portrait)": (576, 1024),
-                    "1024x576 (Landscape)": (1024, 576),
-                    "720x1280 (Portrait HD)": (720, 1280),
-                    "1280x720 (Landscape HD)": (1280, 720),
-                }
-                selected_video_res = st.selectbox("Video Resolution", list(video_resolution_options.keys()), index=0, key="vid_res")
-                st.session_state.video_width, st.session_state.video_height = video_resolution_options[selected_video_res]
-                st.session_state.video_num_frames = st.slider("Number of Frames", 10, 150, st.session_state.video_num_frames, 1, key="vid_frames")
-                st.session_state.video_fps = st.slider("FPS", 5, 30, st.session_state.video_fps, 1, key="vid_fps")
-                st.session_state.motion_bucket_id = st.slider("Motion Bucket ID", 1, 255, st.session_state.motion_bucket_id, 1, key="vid_motion")
+        images_html = "<div class='image-grid'>"
+        for uploaded_file in st.session_state.uploaded_file_objects:
+            encoded_image = base64.b64encode(uploaded_file.getvalue()).decode("utf-8")
+            images_html += f"<div class='uploaded-image-container'><img src='data:{uploaded_file.type};base64,{encoded_image}' class='uploaded-image-thumbnail'/></div>"
+        images_html += "</div>"
+        
+        st.markdown(images_html, unsafe_allow_html=True)
+    
+with image_cols[1]:
+    if st.session_state.get('generated_images', {}).get('seedream'):
+        st.subheader("Generated Images")
+        
+        cols = st.columns(len(st.session_state.generated_images['seedream']))
+        
+        for i, image_data in enumerate(st.session_state.generated_images['seedream']):
+            with cols[i]:
+                st.image(image_data['url'], use_container_width=True)
+                
+                st.download_button(
+                    label="Download",
+                    data=image_data['bytes'],
+                    file_name=f"fal-image_{i+1}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.png",
+                    mime="image/png",
+                )
+            
+st.markdown("---")
+    
+with st.expander("⚙️ Advanced Settings"):
+    st.markdown("Customize how the model generates your image.")
+    
+    resolution_options = {
+        "512x512": (512, 512),
+        "768x768": (768, 768),
+        "1024x1024": (1024, 1024),
+        "2048x2048 (2K)": (2048, 2048),
+        "4096x4096 (4K)": (4096, 4096),
+    }
+    selected_resolution = st.selectbox("Select Resolution", list(resolution_options.keys()), index=2)
+    st.session_state.width, st.session_state.height = resolution_options[selected_resolution]
 
-            with c2:
-                st.session_state.video_num_inference_steps = st.slider("Inference Steps", 10, 100, st.session_state.video_num_inference_steps, 1, key="vid_steps")
-                st.session_state.video_strength = st.slider("Strength (Image influence)", 0.0, 1.0, st.session_state.video_strength, 0.01, key="vid_strength")
-                st.session_state.cond_aug = st.slider("Conditioning Augmentation", 0.0, 0.1, st.session_state.cond_aug, 0.001, format="%.3f", key="vid_cond")
-                st.session_state.video_lora_weight = st.slider("LoRA Weight", 0.0, 1.0, st.session_state.video_lora_weight, 0.01, key="vid_lora")
-            with c3:
-                st.session_state.video_seed = st.number_input("Seed (Optional)", value=None, step=1, format="%d", key="vid_seed")
-                st.session_state.video_safety_checker = st.checkbox("✅ Enable Safety Checker", st.session_state.video_safety_checker, key="vid_safety")
+    st.session_state.strength = st.slider("Strength", min_value=0.0, max_value=1.0, value=st.session_state.strength, step=0.01)
+    st.session_state.guidance_scale = st.slider("Guidance Scale", min_value=1.0, max_value=15.0, value=st.session_state.guidance_scale, step=0.1)
+    st.session_state.num_images = st.slider("Number of Images", min_value=1, max_value=10, value=st.session_state.num_images, step=1)
+    st.session_state.num_inference_steps = st.slider("Inference Steps", min_value=10, max_value=150, value=st.session_state.num_inference_steps, step=1)
+    seed_input = st.number_input("Seed (Optional, leave empty for random)", value=None, step=1, format="%d")
+    st.session_state.seed = seed_input
+    st.session_state.enable_safety_checker = st.checkbox("✅ Enable Safety Checker", value=st.session_state.enable_safety_checker)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
