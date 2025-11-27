@@ -334,7 +334,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- Login Configuration ---
+LOGIN_USERNAME = "nofar"
+LOGIN_PASSWORD = "Nofar123!"
+
 # --- Session State Initialization ---
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
 if 'uploaded_file_objects' not in st.session_state:
     st.session_state.uploaded_file_objects = []
 if 'prompt' not in st.session_state:
@@ -526,9 +532,60 @@ if st.session_state.is_generating:
         generate_t2i()
     st.rerun()
 
-# --- Header ---
-st.markdown("<h1>🍌 NANO BANANA PRO</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: var(--text-muted); font-size: 1.1rem; margin-top: -0.5rem;'>Advanced AI Image Generation & Editing</p>", unsafe_allow_html=True)
+# --- Login Screen ---
+if not st.session_state.authenticated:
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("<h1>🍌 NANO BANANA PRO</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: var(--text-muted); font-size: 1.1rem; margin-top: -0.5rem; margin-bottom: 2rem;'>Advanced AI Image Generation & Editing</p>", unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div style='
+            background-color: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        '>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<h2 style='text-align: center; margin-top: 0;'>🔐 Login</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: var(--text-muted); margin-bottom: 1.5rem;'>Enter your credentials to access the app</p>", unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            username = st.text_input("Username", placeholder="Enter username", key="login_username")
+            password = st.text_input("Password", type="password", placeholder="Enter password", key="login_password")
+            
+            col_a, col_b, col_c = st.columns([1, 2, 1])
+            with col_b:
+                submit = st.form_submit_button("Login", use_container_width=True)
+            
+            if submit:
+                if username == LOGIN_USERNAME and password == LOGIN_PASSWORD:
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid username or password")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.stop()
+
+# --- Main App (Only shown after authentication) ---
+col_header_left, col_header_right = st.columns([4, 1])
+
+with col_header_left:
+    st.markdown("<h1>🍌 NANO BANANA PRO</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: var(--text-muted); font-size: 1.1rem; margin-top: -0.5rem;'>Advanced AI Image Generation & Editing</p>", unsafe_allow_html=True)
+
+with col_header_right:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("🚪 Logout", key="logout_btn"):
+        st.session_state.authenticated = False
+        st.rerun()
 
 st.markdown("<br>", unsafe_allow_html=True)
 
