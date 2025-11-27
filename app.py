@@ -357,12 +357,16 @@ if 'aspect_ratio' not in st.session_state:
     st.session_state.aspect_ratio = "1:1"
 if 'output_format' not in st.session_state:
     st.session_state.output_format = "png"
+if 'resolution' not in st.session_state:
+    st.session_state.resolution = "2K"
 
 # I2I Parameters (Nano Banana Pro Edit) - Fixed to 1 image
 if 'num_images_i2i' not in st.session_state:
     st.session_state.num_images_i2i = 1
 if 'aspect_ratio_i2i' not in st.session_state:
     st.session_state.aspect_ratio_i2i = "auto"
+if 'resolution_i2i' not in st.session_state:
+    st.session_state.resolution_i2i = "2K"
 
 # --- R2 Configuration ---
 R2_ACCOUNT_ID = st.secrets.get("R2_ACCOUNT_ID", "")
@@ -422,7 +426,8 @@ def generate_t2i():
             "prompt": st.session_state.prompt,
             "num_images": st.session_state.num_images,
             "aspect_ratio": st.session_state.aspect_ratio,
-            "output_format": st.session_state.output_format
+            "output_format": st.session_state.output_format,
+            "resolution": st.session_state.resolution
         }
         
         # Call fal.ai API
@@ -483,7 +488,8 @@ def generate_i2i():
             "image_urls": image_urls,
             "num_images": st.session_state.num_images_i2i,
             "aspect_ratio": st.session_state.aspect_ratio_i2i,
-            "output_format": st.session_state.output_format
+            "output_format": st.session_state.output_format,
+            "resolution": st.session_state.resolution_i2i
         }
         
         # Call fal.ai API
@@ -642,6 +648,12 @@ with col_left:
     with st.expander("⚙️ Advanced Settings", expanded=False):
         if st.session_state.uploaded_file_objects:
             st.markdown("**Image-to-Image Settings**")
+            st.session_state.resolution_i2i = st.selectbox(
+                "Resolution",
+                ["1K", "2K", "4K"],
+                index=1,  # Default to 2K
+                key="resolution_i2i_select"
+            )
             st.session_state.aspect_ratio_i2i = st.selectbox(
                 "Aspect Ratio",
                 ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"],
@@ -650,6 +662,12 @@ with col_left:
             )
         else:
             st.markdown("**Text-to-Image Settings**")
+            st.session_state.resolution = st.selectbox(
+                "Resolution",
+                ["1K", "2K", "4K"],
+                index=1,  # Default to 2K
+                key="resolution_select"
+            )
             st.session_state.aspect_ratio = st.selectbox(
                 "Aspect Ratio",
                 ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "9:21"],
