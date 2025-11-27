@@ -344,7 +344,7 @@ if 'generated_images' not in st.session_state:
 if 'is_generating' not in st.session_state:
     st.session_state.is_generating = False
 
-# T2I Parameters (Nano Banana Pro)
+# T2I Parameters (Nano Banana Pro) - Fixed to 1 image
 if 'num_images' not in st.session_state:
     st.session_state.num_images = 1
 if 'aspect_ratio' not in st.session_state:
@@ -352,7 +352,7 @@ if 'aspect_ratio' not in st.session_state:
 if 'output_format' not in st.session_state:
     st.session_state.output_format = "png"
 
-# I2I Parameters (Nano Banana Pro Edit)
+# I2I Parameters (Nano Banana Pro Edit) - Fixed to 1 image
 if 'num_images_i2i' not in st.session_state:
     st.session_state.num_images_i2i = 1
 if 'aspect_ratio_i2i' not in st.session_state:
@@ -585,13 +585,6 @@ with col_left:
     with st.expander("⚙️ Advanced Settings", expanded=False):
         if st.session_state.uploaded_file_objects:
             st.markdown("**Image-to-Image Settings**")
-            st.session_state.num_images_i2i = st.slider(
-                "Number of Images",
-                min_value=1,
-                max_value=4,
-                value=st.session_state.num_images_i2i,
-                key="num_images_i2i_slider"
-            )
             st.session_state.aspect_ratio_i2i = st.selectbox(
                 "Aspect Ratio",
                 ["auto", "1:1", "16:9", "9:16", "4:3", "3:4"],
@@ -600,13 +593,6 @@ with col_left:
             )
         else:
             st.markdown("**Text-to-Image Settings**")
-            st.session_state.num_images = st.slider(
-                "Number of Images",
-                min_value=1,
-                max_value=4,
-                value=st.session_state.num_images,
-                key="num_images_slider"
-            )
             st.session_state.aspect_ratio = st.selectbox(
                 "Aspect Ratio",
                 ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "9:21"],
